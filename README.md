@@ -8,7 +8,8 @@ The following example initiates a opening handshake, checks the handshake respon
 
 ```rust
 // writes an http request to buffer1 and returns the length and generated websocket_key
-let (len, websocket_key) = ws_client.client_initiate_opening_handshake("/chat", "localhost", "1337", None, None, &mut buffer1)?;
+let (len, websocket_key) = ws_client.client_initiate_opening_handshake("/chat", "localhost", "1337", 
+  None, None, &mut buffer1)?;
 
  ... open TCP Stream and write len bytes from buffer1 to stream ...
  ... read some received_size data from a TCP stream into buffer1 ...
@@ -44,7 +45,8 @@ The following example expects an http websocket upgrade message, sends a handsha
 ```rust
  ... read some data from a TCP stream into buffer1 ...
 
-// repeat the read above and check below until Error::HttpHeaderIncomplete is no longer returned (i.e. \r\n\r\n has been read from the stream) 
+// repeat the read above and check below until Error::HttpHeaderIncomplete is no longer returned 
+// (i.e. \r\n\r\n has been read from the stream as per the http spec) 
 let http_header = websockets::read_http_header(&buffer1[..received_size])?;
 
 // check for Some(http_header.websocket_context)
