@@ -50,7 +50,8 @@ The following example expects an http websocket upgrade message, sends a handsha
 let http_header = websockets::read_http_header(&buffer1[..received_size])?;
 
 // check for Some(http_header.websocket_context)
-let len = web_socket.server_respond_to_opening_handshake(&websocket_context.sec_websocket_key, None, &mut buffer1)?;
+let len = web_socket.server_respond_to_opening_handshake(&websocket_context.sec_websocket_key, None, 
+  &mut buffer1)?;
 
  ... write len bytes from buffer1 to TCP Stream ...
  ... read some received_size data from a TCP stream into buffer1 ...
@@ -69,7 +70,8 @@ let len = web_socket.write(WebSocketSendMessageType::Text, true, &buffer2[..ws_r
 
 // in this example say we get a CloseMustReply message below, we need to respond to complete the close handshake 
 let ws_result = web_socket.read(&buffer1[..received_size], &mut buffer2)?;
-let len = web_socket.write(WebSocketSendMessageType::CloseReply, true, &buffer2[..ws_result.num_bytes_to], buffer1)?;
+let len = web_socket.write(WebSocketSendMessageType::CloseReply, true, &buffer2[..ws_result.num_bytes_to], 
+  buffer1)?;
 
  ... write len bytes from buffer1 to TCP Stream...
  ... close the TCP Stream ...
