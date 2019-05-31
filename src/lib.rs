@@ -688,8 +688,10 @@ fn read_into_buffer(mask_key: Option<[u8;4]>, from_buffer: &[u8], to_buffer: &mu
 
     match mask_key {
         Some(mask_key) => {
-            for (i, item) in from_buffer[..len_to_read].iter().enumerate(){
-                to_buffer[i] = *item ^ mask_key[i % MASK_KEY_LEN];
+            let mut i = 0;
+            for (from, to) in from_buffer[..len_to_read].iter().zip(to_buffer) {
+                *to = *from ^ mask_key[i % MASK_KEY_LEN];
+                i = i + 1;
             }
         },
         None => {
@@ -741,16 +743,15 @@ fn write_frame(
         buf.extend(&mask_key);
 
         to_buffer[..buf.len()].copy_from_slice(&buf);
-        let slice = &from_buffer[..count];
-        let from_index = buf.len();
-
-        if from_index + slice.len() > to_buffer.len() {
+        let to_buffer_start = buf.len();
+        if (to_buffer_start + count) > to_buffer.len() {
             return Err(Error::WriteToBufferTooSmall);
         }
 
-        // mask the data with the mask key
-        for (i, item) in slice.iter().enumerate(){
-            to_buffer[i + from_index] = *item ^ mask_key[i % MASK_KEY_LEN];
+        let mut i = 0;
+        for (from, to) in from_buffer[..count].iter().zip(&mut to_buffer[to_buffer_start..]) {
+            *to = *from ^ mask_key[i % MASK_KEY_LEN];
+            i = i + 1;
         }
     } else {
         to_buffer[..buf.len()].copy_from_slice(&buf);
