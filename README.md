@@ -7,6 +7,10 @@ This library facilitates the encoding and decoding of websocket messages and can
 The following example initiates a opening handshake, checks the handshake response, sends a short message, initiates a close handshake, checks the close handshake response and quits.
 
 ```rust
+
+let mut buffer1: [u8; 1000] = [0; 1000];
+let mut buffer2: [u8; 1000] = [0; 1000];
+
 // writes an http request to buffer1 and returns the length and generated websocket_key
 let (len, websocket_key) = ws_client.client_initiate_opening_handshake("/chat", "localhost", "1337", 
   None, None, &mut buffer1)?;
@@ -43,6 +47,10 @@ let ws_result = ws_client.read(&buffer1[..received_size], &mut ws_buffer2)?;
 The following example expects an http websocket upgrade message, sends a handshake response, reads a Text frame, echo's the frame back, reads a Close frame, sends a Close frame response.
 
 ```rust
+
+let mut buffer1: [u8; 1000] = [0; 1000];
+let mut buffer2: [u8; 1000] = [0; 1000];
+
  ... read some data from a TCP stream into buffer1 ...
 
 // repeat the read above and check below until Error::HttpHeaderIncomplete is no longer returned 
