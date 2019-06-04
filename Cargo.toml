@@ -1,13 +1,17 @@
 [package]
-name = "websockets"
+name = "embedded-websockets"
 version = "0.1.0"
-authors = ["David Haig <david@ninjasource.com>"]
+authors = ["David Haig"]
 edition = "2018"
 license = "MIT"
+repository = "https://github.com/ninjasource/embedded-websockets.git"
+description = "A websocket library for embedded systems (no_std)"
+keywords = ["embedded", "iot", "arm"]
+categories = ["embedded", "no-std", "network-programming"]
+readme = "README.md"
 
 [dependencies]
 sha1 = "0.6.0"
 heapless = "0.4.1"
 byteorder = { version = "1.3.1", default-features = false }
 httparse = { version = "1.3.3", default-features = false }
-
