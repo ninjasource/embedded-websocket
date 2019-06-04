@@ -16,6 +16,7 @@ use std::str::Utf8Error;
 use ws::{
     WebSocket, WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
 };
+use embedded_websockets::WebSocketOptions;
 
 #[derive(Debug)]
 enum WebClientError {
@@ -71,12 +72,15 @@ fn main() -> Result<()> {
     let mut ws_client = WebSocket::new_client();
 
     // initiate a websocket opening handshake
+    let websocket_options = WebSocketOptions {
+        path: "/chat",
+        host : "localhost",
+        port : 1337,
+        sub_protocols : None,
+        additional_headers : None,
+    };
     let (len, web_socket_key) = ws_client.client_initiate_opening_handshake(
-        "/chat",
-        "localhost",
-        "1337",
-        None,
-        None,
+        &websocket_options,
         &mut buffer1,
     )?;
     println!("Sending opening handshake: {} bytes", len);
@@ -85,7 +89,7 @@ fn main() -> Result<()> {
     // read the response from the server and check it to complete the opening handshake
     let received_size = stream.read(&mut buffer1)?;
     ws_client.client_complete_opening_handshake(
-        web_socket_key.as_str(),
+        &web_socket_key,
         &mut buffer1[..received_size],
     )?;
     println!("Opening handshake completed successfully");

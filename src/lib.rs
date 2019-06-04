@@ -1,11 +1,14 @@
 // The MIT License (MIT)
 // Copyright (c) 2019 David Haig
 
-// This library facilitates the encoding and decoding of websocket messages and can be used
+// This library facilitates the encoding and decoding of websocket frames and can be used
 // for both clients and servers. The library is intended to be used in constrained memory
 // environments like embedded microcontrollers which cannot reference the rust standard library.
-// The library will work with arbitrarily small buffers regardless of websocket frame size
-// as long as the websocket header can be read (2 - 14 bytes depending)
+// It will work with arbitrarily small buffers regardless of websocket frame size as long as the
+// websocket header can be read (2 - 14 bytes depending)
+// Since the library is essentially an encoder or decoder of byte slices, the developer is free to
+// use whatever transport mechanism they chose. The examples use the TcpStream from the standard
+// library.
 
 #![no_std]
 
@@ -14,8 +17,9 @@ use core::{result, str};
 use heapless::consts::*; // these are for constants like U4, U16, U24, U32
 use heapless::{String, Vec};
 use sha1::Sha1;
+use core::convert::TryFrom;
 
-// the world's worst random number generator - but hey, it's just for http caching
+// the world's worst random number generator - only used for http caching
 struct Random {
     seed: u8,
 }
@@ -109,6 +113,8 @@ pub enum WebSocketState {
 
 const MASK_KEY_LEN: usize = 4;
 pub type Result<T> = result::Result<T, Error>;
+pub type WebSocketKey = String<U24>;
+pub type WebSockeSubProtocol = String<U24>;
 
 #[derive(PartialEq, Debug)]
 pub enum Error {
@@ -126,6 +132,7 @@ pub enum Error {
     ReadFromBufferTooSmall,
     HttpResponseCodeInvalid,
     AcceptStringInvalid,
+    ConvertInfallible
 }
 
 impl From<httparse::Error> for Error {
@@ -137,6 +144,11 @@ impl From<httparse::Error> for Error {
 impl From<str::Utf8Error> for Error {
     fn from(_: str::Utf8Error) -> Error {
         Error::Utf8Error
+    }
+}
+impl From<core::convert::Infallible> for Error {
+    fn from(_: core::convert::Infallible) -> Error {
+        Error::ConvertInfallible
     }
 }
 
@@ -178,6 +190,14 @@ pub struct ContinuationRead {
     count: usize,
     is_fin_bit_set: bool,
     mask_key: Option<[u8; 4]>,
+}
+
+pub struct WebSocketOptions<'a> {
+    pub path: &'a str,
+    pub host: &'a str,
+    pub port: u16,
+    pub sub_protocols: Option<&'a[&'a str]>,
+    pub additional_headers: Option<&'a[&'a str]>,
 }
 
 pub fn read_http_header(buffer: &[u8]) -> Result<HttpHeader> {
@@ -263,40 +283,48 @@ impl WebSocket {
 
     pub fn client_initiate_opening_handshake(
         &mut self,
-        uri: &str,
-        host: &str,
-        port: &str,
-        sub_protocol: Option<&str>,
-        additional_headers: Option<&str>,
+        websocket_options : &WebSocketOptions,
         to_buffer: &mut [u8],
-    ) -> Result<(usize, String<U24>)> {
+    ) -> Result<(usize, WebSocketKey)> {
         let mut key: [u8; 16] = [0; 16];
         self.rng.fill_bytes(&mut key);
         let mut key_as_base64: [u8; 24] = [0; 24];
         base64_encode(&key, &mut key_as_base64);
         let mut http_request: String<U1024> = String::new();
         let sec_websocket_key: String<U24> = String::from(str::from_utf8(&key_as_base64)?);
+        let port: String<U8> = String::try_from(websocket_options.port)?;
+
         http_request.push_str("GET ")?;
-        http_request.push_str(uri)?;
+        http_request.push_str(websocket_options.path)?;
         http_request.push_str(" HTTP/1.1\r\nHost: ")?;
-        http_request.push_str(host)?;
+        http_request.push_str(websocket_options.host)?;
         http_request.push_str(":")?;
-        http_request.push_str(port)?;
+        http_request.push_str(port.as_str())?;
         http_request
             .push_str("\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ")?;
         http_request.push_str(sec_websocket_key.as_str())?;
         http_request.push_str("\r\nOrigin: http://")?;
-        http_request.push_str(host)?;
+        http_request.push_str(websocket_options.host)?;
         http_request.push_str(":")?;
-        http_request.push_str(port)?;
-        http_request.push_str("\r\nSec-WebSocket-Protocol: ")?;
-        if let Some(sub_protocol) = sub_protocol {
-            http_request.push_str(sub_protocol)?;
-        }
+        http_request.push_str(port.as_str())?;
 
+        // turn sub protocol list into a CSV list
+        http_request.push_str("\r\nSec-WebSocket-Protocol: ")?;
+        if let Some(sub_protocols) = websocket_options.sub_protocols {
+            for (i, sub_protocol) in sub_protocols.iter().enumerate(){
+                http_request.push_str(sub_protocol)?;
+                if i < (sub_protocols.len() - 1) {
+                    http_request.push_str(", ")?;
+                }
+            }
+        }
         http_request.push_str("\r\n")?;
-        if let Some(additional_headers) = additional_headers {
-            http_request.push_str(additional_headers)?;
+
+        if let Some(additional_headers) = websocket_options.additional_headers {
+            for additional_header in additional_headers.iter() {
+                http_request.push_str(additional_header)?;
+                http_request.push_str("\r\n")?;
+            }
         }
 
         http_request.push_str("Sec-WebSocket-Version: 13\r\n\r\n")?;
@@ -307,12 +335,11 @@ impl WebSocket {
 
     pub fn client_complete_opening_handshake(
         &mut self,
-        sec_websocket_key: &str,
+        sec_websocket_key: &WebSocketKey,
         from_buffer: &[u8],
-    ) -> Result<Option<String<U24>>> {
+    ) -> Result<Option<WebSockeSubProtocol>> {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut response = httparse::Response::new(&mut headers);
-        let mut sec_websocket_protocol: Option<String<U24>> = None;
         if response.parse(&from_buffer)?.is_complete() {
             match response.code {
                 Some(101) => {
@@ -324,11 +351,12 @@ impl WebSocket {
                 }
             };
 
+            let mut sec_websocket_protocol: Option<WebSockeSubProtocol> = None;
             for item in response.headers.iter() {
                 match item.name {
                     "Sec-WebSocket-Accept" => {
                         let mut output = [0; 28];
-                        build_accept_string(sec_websocket_key, &mut output)?;
+                        build_accept_string(&sec_websocket_key, &mut output)?;
                         let expected_accept_string = str::from_utf8(&output)?;
                         let actual_accept_string = str::from_utf8(item.value)?;
                         if actual_accept_string != expected_accept_string {
@@ -344,16 +372,19 @@ impl WebSocket {
                     }
                 }
             }
-        }
 
-        self.state = WebSocketState::Open;
-        Ok(sec_websocket_protocol)
+            self.state = WebSocketState::Open;
+            Ok(sec_websocket_protocol)
+        }
+        else {
+            Err(Error::HttpHeaderIncomplete)
+        }
     }
 
     pub fn server_respond_to_opening_handshake(
         &mut self,
-        sec_websocket_key: &str,
-        sec_websocket_protocol: Option<&str>,
+        sec_websocket_key: &WebSocketKey,
+        sec_websocket_protocol: Option<&WebSockeSubProtocol>,
         to: &mut [u8],
     ) -> Result<usize> {
         self.state = WebSocketState::Connecting;
@@ -641,7 +672,7 @@ impl WebSocket {
     }
 }
 
-fn build_accept_string(sec_websocket_key: &str, output: &mut [u8]) -> Result<()> {
+fn build_accept_string(sec_websocket_key: &WebSocketKey, output: &mut [u8]) -> Result<()> {
     // concatenate the key with a known websocket GUID (as per the spec)
     let mut accept_string: String<U64> = String::new();
     accept_string.push_str(sec_websocket_key)?;
