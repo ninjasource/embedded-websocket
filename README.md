@@ -5,15 +5,16 @@ This library facilitates the encoding and decoding of websocket messages and can
 
 ### Running the examples
 
-Open a command window
+To run the demo web server
 
 ```
 cargo run --example server
 ```
-and in another command window
+To run the demo websocket client
 ```
 cargo run --example client
 ```
+or use this url in your browser `http://127.0.0.1:1337/`
 
 ### Example websocket client usage:
 The following example initiates a opening handshake, checks the handshake response, sends a short message, initiates a close handshake, checks the close handshake response and quits.
