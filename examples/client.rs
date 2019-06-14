@@ -63,7 +63,7 @@ fn write_all(stream: &mut TcpStream, buffer: &[u8]) -> Result<()> {
 fn main() -> Result<()> {
     // open a TCP stream to localhost port 1337
     let address = "127.0.0.1:1337";
-    println!("Connecting to {}...", address);
+    println!("Connecting to: {}", address);
     let mut stream = TcpStream::connect(address)?;
     println!("Connected.");
 
