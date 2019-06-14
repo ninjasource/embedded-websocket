@@ -10,16 +10,23 @@ The following example initiates a opening handshake, checks the handshake respon
 
 let mut buffer1: [u8; 1000] = [0; 1000];
 let mut buffer2: [u8; 1000] = [0; 1000];
+let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
 
-// writes an http request to buffer1 and returns the length and generated websocket_key
-let (len, websocket_key) = ws_client.client_initiate_opening_handshake("/chat", "localhost", "1337", 
-  None, None, &mut buffer1)?;
+// initiate a websocket opening handshake
+let websocket_options = WebSocketOptions {
+    path: "/chat",
+    host: "localhost",
+    port: 1337,
+    sub_protocols: None,
+    additional_headers: None,
+};
+let (len, web_socket_key) = ws_client.connect(&websocket_options, &mut buffer1)?;
 
  ... open TCP Stream and write len bytes from buffer1 to stream ...
  ... read some received_size data from a TCP stream into buffer1 ...
 
 // check the server response against the websocket_key we generated
-ws_client.client_complete_opening_handshake(websocket_key.as_str(), &mut buffer1[..received_size])?;
+ws_client.client_accept(&web_socket_key, &mut buffer1[..received_size])?;
 
 // send a Text websocket frame
 let len = ws_client.write(WebSocketSendMessageType::Text, true, &"hello".as_bytes(), &mut buffer1)?;
@@ -50,6 +57,7 @@ The following example expects an http websocket upgrade message, sends a handsha
 
 let mut buffer1: [u8; 1000] = [0; 1000];
 let mut buffer2: [u8; 1000] = [0; 1000];
+let mut web_socket = WebSocketServer::new_server();
 
  ... read some data from a TCP stream into buffer1 ...
 
@@ -58,8 +66,7 @@ let mut buffer2: [u8; 1000] = [0; 1000];
 let http_header = websockets::read_http_header(&buffer1[..received_size])?;
 
 // check for Some(http_header.websocket_context)
-let len = web_socket.server_respond_to_opening_handshake(&websocket_context.sec_websocket_key, None, 
-  &mut buffer1)?;
+let len = web_socket.server_accept(&websocket_context.sec_websocket_key, None, buffer1)?;
 
  ... write len bytes from buffer1 to TCP Stream ...
  ... read some received_size data from a TCP stream into buffer1 ...
