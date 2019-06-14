@@ -8,14 +8,16 @@
 // the client as well as responding to any opening and closing handshakes.
 // Note that we are using the standard library in the demo but the websocket library remains no_std
 
-use embedded_websockets as ws;
-
-use embedded_websockets::HttpHeader;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::str::Utf8Error;
 use std::thread;
-use ws::{WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketServer, WebSocketState};
+
+use embedded_websockets as ws;
+use ws::{
+    HttpHeader, WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketServer,
+    WebSocketState,
+};
 
 type Result<T> = std::result::Result<T, WebServerError>;
 
@@ -44,10 +46,29 @@ impl From<Utf8Error> for WebServerError {
     }
 }
 
+fn main() -> std::io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:1337")?;
+
+    // accept connections and process them serially
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                thread::spawn(|| match handle_client(stream) {
+                    Ok(()) => println!("Connection closed"),
+                    Err(e) => println!("Error: {:?}", e),
+                });
+            }
+            Err(e) => println!("Failed to establish a connection: {}", e),
+        }
+    }
+
+    Ok(())
+}
+
 fn handle_client(mut stream: TcpStream) -> Result<()> {
     let mut buffer1: [u8; 3000] = [0; 3000];
     let mut buffer2: [u8; 3000] = [0; 3000];
-    let mut web_socket = WebSocketServer::new();
+    let mut web_socket = WebSocketServer::new_server();
     let mut num_bytes = 0;
 
     // read until the stream is closed (zero bytes read from the stream)
@@ -63,7 +84,7 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
             return Ok(());
         }
 
-        if web_socket.get_state() == WebSocketState::Open {
+        if web_socket.state == WebSocketState::Open {
             // if the tcp stream has already been upgraded to a websocket connection
             if !web_socket_read(&mut web_socket, &mut stream, &mut buffer1, &mut buffer2)? {
                 println!("Websocket closed");
@@ -98,7 +119,8 @@ fn respond_to_http_request(
     if let Some(websocket_context) = http_header.websocket_context {
         // this is a web socket upgrade request
         println!("Received websocket upgrade request");
-        let to_send = web_socket.accept(&websocket_context.sec_websocket_key, None, buffer2)?;
+        let to_send =
+            web_socket.server_accept(&websocket_context.sec_websocket_key, None, buffer2)?;
         write_to_stream(stream, &buffer2[..to_send])?;
         Ok(true)
     } else {
@@ -182,25 +204,6 @@ fn web_socket_read(
             Ok(true)
         }
     }
-}
-
-fn main() -> std::io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:1337")?;
-
-    // accept connections and process them serially
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                thread::spawn(|| match handle_client(stream) {
-                    Ok(()) => println!("Connection closed"),
-                    Err(e) => println!("Error: {:?}", e),
-                });
-            }
-            Err(e) => println!("Failed to establish a connection: {}", e),
-        }
-    }
-
-    Ok(())
 }
 
 const ROOT_HTML : &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 2590\r\nConnection: close\r\n\r\n<!doctype html>

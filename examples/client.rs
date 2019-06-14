@@ -9,14 +9,13 @@
 // Note that we are using the standard library in the demo but the websocket library remains no_std
 
 use embedded_websockets as ws;
-
-use embedded_websockets::{DummyRng, WebSocketOptions};
-use rand_core::RngCore;
+use embedded_websockets::WebSocketOptions;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::Utf8Error;
 use ws::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
+    WebSocketClient, WebSocketCloseStatusCode, WebSocketReceiveMessageType,
+    WebSocketSendMessageType,
 };
 
 #[derive(Debug)]
@@ -70,7 +69,7 @@ fn main() -> Result<()> {
 
     let mut buffer1: [u8; 4000] = [0; 4000];
     let mut buffer2: [u8; 4000] = [0; 4000];
-    let mut ws_client = WebSocket::new(true, rand::thread_rng());
+    let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
@@ -80,7 +79,7 @@ fn main() -> Result<()> {
         sub_protocols: None,
         additional_headers: None,
     };
-    let (len, web_socket_key) = ws_client.client_connect(&websocket_options, &mut buffer1)?;
+    let (len, web_socket_key) = ws_client.connect(&websocket_options, &mut buffer1)?;
     println!("Sending opening handshake: {} bytes", len);
     write_all(&mut stream, &buffer1[..len])?;
 
