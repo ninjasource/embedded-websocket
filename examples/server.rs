@@ -86,7 +86,7 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
 
         if web_socket.state == WebSocketState::Open {
             // if the tcp stream has already been upgraded to a websocket connection
-            if !web_socket_read(&mut web_socket, &mut stream, &mut buffer1, &mut buffer2)? {
+            if !web_socket_read(&mut web_socket, &mut stream, &mut buffer1, &mut buffer2, num_bytes)? {
                 println!("Websocket closed");
                 return Ok(());
             }
@@ -159,8 +159,9 @@ fn web_socket_read(
     stream: &mut TcpStream,
     tcp_buffer: &mut [u8],
     ws_buffer: &mut [u8],
+    num_bytes: usize,
 ) -> Result<bool> {
-    let ws_result = web_socket.read(tcp_buffer, ws_buffer)?;
+    let ws_result = web_socket.read(&tcp_buffer[..num_bytes], ws_buffer)?;
     match ws_result.message_type {
         WebSocketReceiveMessageType::Text => {
             let s = std::str::from_utf8(&ws_buffer[..ws_result.num_bytes_to])?;
