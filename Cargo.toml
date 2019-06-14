@@ -5,8 +5,8 @@ authors = ["David Haig"]
 edition = "2018"
 license = "MIT"
 repository = "https://github.com/ninjasource/embedded-websockets.git"
-description = "A websocket library for embedded systems (no_std)"
-keywords = ["embedded", "iot", "arm"]
+description = "A lightweight websocket library for embedded systems (no_std)"
+keywords = ["websockets", "websocket", "embedded", "iot", "http"]
 categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
@@ -15,3 +15,7 @@ sha1 = "0.6.0"
 heapless = "0.4.1"
 byteorder = { version = "1.3.1", default-features = false }
 httparse = { version = "1.3.3", default-features = false }
+rand_core = "0.4.0"
+
+[dev-dependencies]
+rand = "0.6.5"

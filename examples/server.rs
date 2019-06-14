@@ -15,7 +15,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::str::Utf8Error;
 use std::thread;
-use ws::{WebSocket, WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketState};
+use ws::{WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketServer, WebSocketState};
 
 type Result<T> = std::result::Result<T, WebServerError>;
 
@@ -47,7 +47,7 @@ impl From<Utf8Error> for WebServerError {
 fn handle_client(mut stream: TcpStream) -> Result<()> {
     let mut buffer1: [u8; 3000] = [0; 3000];
     let mut buffer2: [u8; 3000] = [0; 3000];
-    let mut web_socket = WebSocket::new_server();
+    let mut web_socket = WebSocketServer::new();
     let mut num_bytes = 0;
 
     // read until the stream is closed (zero bytes read from the stream)
@@ -91,18 +91,14 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
 // returns true to keep the connection open
 fn respond_to_http_request(
     http_header: HttpHeader,
-    web_socket: &mut WebSocket,
+    web_socket: &mut WebSocketServer,
     buffer2: &mut [u8],
     stream: &mut TcpStream,
 ) -> Result<bool> {
     if let Some(websocket_context) = http_header.websocket_context {
         // this is a web socket upgrade request
         println!("Received websocket upgrade request");
-        let to_send = web_socket.server_respond_to_opening_handshake(
-            &websocket_context.sec_websocket_key,
-            None,
-            buffer2,
-        )?;
+        let to_send = web_socket.accept(&websocket_context.sec_websocket_key, None, buffer2)?;
         write_to_stream(stream, &buffer2[..to_send])?;
         Ok(true)
     } else {
@@ -137,7 +133,7 @@ fn write_to_stream(stream: &mut TcpStream, buffer: &[u8]) -> Result<()> {
 }
 
 fn web_socket_read(
-    web_socket: &mut WebSocket,
+    web_socket: &mut WebSocketServer,
     stream: &mut TcpStream,
     tcp_buffer: &mut [u8],
     ws_buffer: &mut [u8],
