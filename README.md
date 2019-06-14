@@ -3,6 +3,18 @@ A lightweight rust websocket library for embedded systems (no_std)
 
 This library facilitates the encoding and decoding of websocket messages and can be used for both clients and servers. The library is intended to be used in constrained memory environments like embedded microcontrollers which cannot reference the rust standard library. The library will work with arbitrarily small buffers regardless of websocket frame size as long as the websocket header can be read (2 - 14 bytes depending)
 
+### Running the examples
+
+Open a command window
+
+```
+cargo run --example server
+```
+and in another command window
+```
+cargo run --example client
+```
+
 ### Example websocket client usage:
 The following example initiates a opening handshake, checks the handshake response, sends a short message, initiates a close handshake, checks the close handshake response and quits.
 
