@@ -13,30 +13,16 @@
 #![no_std]
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
-use core::{result, str};
+use core::{cmp, result, str};
 use heapless::consts::*; // these are for constants like U4, U16, U24, U32
 use heapless::{String, Vec};
 use rand_core::RngCore;
 use sha1::Sha1;
 
 mod base64;
-mod client;
-mod server;
-
-// re-export client and server
-pub use self::client::*;
-pub use self::server::*;
-
-pub struct HttpHeader {
-    pub path: String<U128>,
-    pub websocket_context: Option<WebSocketContext>,
-}
-
-pub struct WebSocketContext {
-    // Max 3 sub protocols of size 24 bytes each
-    pub sec_websocket_protocol_list: Vec<String<U24>, U3>,
-    pub sec_websocket_key: String<U24>,
-}
+mod http;
+mod random;
+pub use self::http::{read_http_header, HttpHeader, WebSocketContext};
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum WebSocketSendMessageType {
@@ -107,6 +93,8 @@ const MASK_KEY_LEN: usize = 4;
 pub type Result<T> = result::Result<T, Error>;
 pub type WebSocketKey = String<U24>;
 pub type WebSocketSubProtocol = String<U24>;
+
+use random::EmptyRng;
 
 #[derive(PartialEq, Debug)]
 pub enum Error {
@@ -180,64 +168,13 @@ struct WebSocketFrame {
 }
 
 impl WebSocketFrame {
-    fn to_readresult(
-        &self,
-        continuation_frame_op_code: &Option<WebSocketOpCode>,
-        state: &WebSocketState,
-    ) -> Result<WebSocketReadResult> {
-        match self.op_code {
-            WebSocketOpCode::Ping => Ok(WebSocketReadResult {
-                num_bytes_from: self.num_bytes_from,
-                num_bytes_to: self.num_bytes_to,
-                end_of_message: self.is_fin_bit_set,
-                close_status: None,
-                message_type: WebSocketReceiveMessageType::Ping,
-            }),
-            WebSocketOpCode::Pong => Ok(WebSocketReadResult {
-                num_bytes_from: self.num_bytes_from,
-                num_bytes_to: self.num_bytes_to,
-                end_of_message: self.is_fin_bit_set,
-                close_status: None,
-                message_type: WebSocketReceiveMessageType::Pong,
-            }),
-            WebSocketOpCode::ConnectionClose => {
-                let message_type = if *state == WebSocketState::CloseSent {
-                    WebSocketReceiveMessageType::CloseCompleted
-                } else {
-                    WebSocketReceiveMessageType::CloseMustReply
-                };
-                Ok(WebSocketReadResult {
-                    num_bytes_from: self.num_bytes_from,
-                    num_bytes_to: self.num_bytes_to,
-                    end_of_message: self.is_fin_bit_set,
-                    close_status: self.close_status,
-                    message_type,
-                })
-            }
-            WebSocketOpCode::TextFrame => Ok(WebSocketReadResult {
-                num_bytes_from: self.num_bytes_from,
-                num_bytes_to: self.num_bytes_to,
-                end_of_message: self.is_fin_bit_set,
-                close_status: None,
-                message_type: WebSocketReceiveMessageType::Text,
-            }),
-            WebSocketOpCode::BinaryFrame => Ok(WebSocketReadResult {
-                num_bytes_from: self.num_bytes_from,
-                num_bytes_to: self.num_bytes_to,
-                end_of_message: self.is_fin_bit_set,
-                close_status: None,
-                message_type: WebSocketReceiveMessageType::Binary,
-            }),
-            WebSocketOpCode::ContinuationFrame => match continuation_frame_op_code {
-                Some(cf_op_code) => Ok(WebSocketReadResult {
-                    num_bytes_from: self.num_bytes_from,
-                    num_bytes_to: self.num_bytes_to,
-                    end_of_message: self.is_fin_bit_set,
-                    close_status: None,
-                    message_type: cf_op_code.to_message_type()?,
-                }),
-                None => Err(Error::InvalidOpCode),
-            },
+    fn to_readresult(&self, message_type: WebSocketReceiveMessageType) -> WebSocketReadResult {
+        WebSocketReadResult {
+            num_bytes_from: self.num_bytes_from,
+            num_bytes_to: self.num_bytes_to,
+            end_of_message: self.is_fin_bit_set,
+            close_status: self.close_status,
+            message_type,
         }
     }
 }
@@ -258,6 +195,8 @@ pub struct WebSocketOptions<'a> {
     pub additional_headers: Option<&'a [&'a str]>,
 }
 
+pub type WebSocketServer = WebSocket<EmptyRng>;
+
 pub struct WebSocket<T>
 where
     T: RngCore,
@@ -273,10 +212,9 @@ impl<T> WebSocket<T>
 where
     T: RngCore,
 {
-    // TODO: make this private
-    pub fn new(is_client: bool, rng: T) -> WebSocket<T> {
+    pub fn new_client(rng: T) -> WebSocket<T> {
         WebSocket {
-            is_client,
+            is_client: true,
             rng,
             continuation_frame_op_code: None,
             state: WebSocketState::None,
@@ -284,16 +222,122 @@ where
         }
     }
 
-    pub fn read(&mut self, from: &[u8], to: &mut [u8]) -> Result<WebSocketReadResult> {
-        let frame = self.read_frame(from, to)?;
-        let read_result = frame.to_readresult(&self.continuation_frame_op_code, &self.state)?;
-        if frame.op_code == WebSocketOpCode::ConnectionClose
-            && self.state == WebSocketState::CloseSent
-        {
-            self.state = WebSocketState::Closed;
+    // NOTE: this should be called as follows:
+    // WebSocketServer::new_server()
+    // or you will get a "type annotations needed" error
+    pub fn new_server() -> WebSocketServer {
+        let rng = EmptyRng::new();
+        WebSocket {
+            is_client: false,
+            rng,
+            continuation_frame_op_code: None,
+            state: WebSocketState::None,
+            continuation_read: None,
+        }
+    }
+
+    // TODO: find out why this does not work:
+    // let mut ws = WebSocket::new_server_not_working();
+    pub fn new_server_not_working() -> WebSocket<EmptyRng> {
+        let rng = EmptyRng::new();
+        WebSocket {
+            is_client: false,
+            rng,
+            continuation_frame_op_code: None,
+            state: WebSocketState::None,
+            continuation_read: None,
+        }
+    }
+
+    pub fn server_accept(
+        &mut self,
+        sec_websocket_key: &WebSocketKey,
+        sec_websocket_protocol: Option<&WebSocketSubProtocol>,
+        to: &mut [u8],
+    ) -> Result<usize> {
+        if self.is_client {
+            panic!("Server websocket expected");
         }
 
-        Ok(read_result)
+        match http::build_connect_handshake_response(sec_websocket_key, sec_websocket_protocol, to)
+        {
+            Ok(http_response_len) => {
+                self.state = WebSocketState::Open;
+                Ok(http_response_len)
+            }
+            Err(e) => {
+                self.state = WebSocketState::Connecting;
+                Err(e)
+            }
+        }
+    }
+
+    pub fn client_connect(
+        &mut self,
+        websocket_options: &WebSocketOptions,
+        to: &mut [u8],
+    ) -> Result<(usize, WebSocketKey)> {
+        if !self.is_client {
+            panic!("Client websocket expected");
+        }
+
+        match http::build_connect_handshake_request(websocket_options, &mut self.rng, to) {
+            Ok((request_len, sec_websocket_key)) => {
+                self.state = WebSocketState::Connecting;
+                Ok((request_len, sec_websocket_key))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn client_accept(
+        &mut self,
+        sec_websocket_key: &WebSocketKey,
+        from: &[u8],
+    ) -> Result<Option<WebSocketSubProtocol>> {
+        if !self.is_client {
+            panic!("Client websocket expected");
+        }
+
+        match http::read_server_connect_handshake_response(sec_websocket_key, from) {
+            Ok(sec_websocket_protocol) => {
+                self.state = WebSocketState::Open;
+                Ok(sec_websocket_protocol)
+            }
+            Err(e) => {
+                self.state = WebSocketState::Aborted;
+                Err(e)
+            }
+        }
+    }
+
+    pub fn read(&mut self, from: &[u8], to: &mut [u8]) -> Result<WebSocketReadResult> {
+        let frame = self.read_frame(from, to)?;
+
+        match frame.op_code {
+            WebSocketOpCode::Ping => Ok(frame.to_readresult(WebSocketReceiveMessageType::Ping)),
+            WebSocketOpCode::Pong => Ok(frame.to_readresult(WebSocketReceiveMessageType::Pong)),
+            WebSocketOpCode::TextFrame => {
+                Ok(frame.to_readresult(WebSocketReceiveMessageType::Text))
+            }
+            WebSocketOpCode::BinaryFrame => {
+                Ok(frame.to_readresult(WebSocketReceiveMessageType::Binary))
+            }
+            WebSocketOpCode::ConnectionClose => match self.state {
+                WebSocketState::CloseSent => {
+                    self.state = WebSocketState::Closed;
+                    Ok(frame.to_readresult(WebSocketReceiveMessageType::CloseCompleted))
+                }
+                _ => {
+                    self.state = WebSocketState::CloseReceived;
+                    Ok(frame.to_readresult(WebSocketReceiveMessageType::CloseMustReply))
+                }
+            },
+            WebSocketOpCode::ContinuationFrame => match self.continuation_frame_op_code {
+                Some(cf_op_code) => Ok(frame.to_readresult(cf_op_code.to_message_type()?)),
+                None => Err(Error::InvalidOpCode),
+            },
+        }
     }
 
     pub fn write(
@@ -435,77 +479,8 @@ where
     }
 }
 
-pub fn read_http_header(buffer: &[u8]) -> Result<HttpHeader> {
-    let mut headers = [httparse::EMPTY_HEADER; 16];
-    let mut req = httparse::Request::new(&mut headers);
-    if req.parse(&buffer)?.is_complete() {
-        let path = match req.path {
-            Some(path) => String::from(path),
-            None => return Err(Error::HttpHeaderNoPath),
-        };
-        let mut sec_websocket_protocol_list: Vec<String<U24>, U3> = Vec::new();
-        let mut is_websocket_request = false;
-        let mut sec_websocket_key = String::new();
-
-        for item in req.headers.iter() {
-            match item.name {
-                "Upgrade" => is_websocket_request = str::from_utf8(item.value)? == "websocket",
-                "Sec-WebSocket-Protocol" => {
-                    // extract a csv list of supported sub protocols
-                    for item in str::from_utf8(item.value)?.split(',') {
-                        if sec_websocket_protocol_list.len()
-                            < sec_websocket_protocol_list.capacity()
-                        {
-                            // it is safe to unwrap here because we have checked
-                            // the size of the list beforehand
-                            sec_websocket_protocol_list
-                                .push(String::from(item))
-                                .unwrap();
-                        }
-                    }
-                }
-                "Sec-WebSocket-Key" => {
-                    sec_websocket_key = String::from(str::from_utf8(item.value)?);
-                }
-                &_ => {
-                    // ignore all other headers
-                }
-            }
-        }
-
-        let websocket_context = {
-            if is_websocket_request {
-                Some(WebSocketContext {
-                    sec_websocket_protocol_list,
-                    sec_websocket_key,
-                })
-            } else {
-                None
-            }
-        };
-
-        let header = HttpHeader {
-            path,
-            websocket_context,
-        };
-
-        return Ok(header);
-    } else {
-        return Err(Error::HttpHeaderIncomplete);
-    }
-}
-
-fn build_accept_string(sec_websocket_key: &WebSocketKey, output: &mut [u8]) -> Result<()> {
-    // concatenate the key with a known websocket GUID (as per the spec)
-    let mut accept_string: String<U64> = String::new();
-    accept_string.push_str(sec_websocket_key)?;
-    accept_string.push_str("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")?;
-
-    // calculate the base64 encoded sha1 hash of the accept string above
-    let sha1 = Sha1::from(&accept_string);
-    let input = sha1.digest().bytes();
-    base64::encode(&input, output); // no need for slices since the output WILL be 28 bytes
-    Ok(())
+fn min(num1: usize, num2: usize, num3: usize) -> usize {
+    cmp::min(cmp::min(num1, num2), num3)
 }
 
 fn read_into_buffer(
@@ -514,16 +489,8 @@ fn read_into_buffer(
     to_buffer: &mut [u8],
     len: usize,
 ) -> usize {
-    let len_to_read = if len < to_buffer.len() {
-        len
-    } else {
-        to_buffer.len()
-    };
-    let len_to_read = if len_to_read < from_buffer.len() {
-        len_to_read
-    } else {
-        from_buffer.len()
-    };
+    // if we are trying to read more than number of bytes in either buffer
+    let len_to_read = min(len, to_buffer.len(), from_buffer.len());
 
     match mask_key {
         Some(mask_key) => {
@@ -763,7 +730,8 @@ Upgrade: websocket
 
         let http_header = read_http_header(&client_request.as_bytes()).unwrap();
         let web_socket_context = http_header.websocket_context.unwrap();
-        let mut web_socket = WebSocket::new(false, EmptyRng::new());
+        let mut web_socket = WebSocketServer::new_server();
+
         let mut ws_buffer: [u8; 3000] = [0; 3000];
         let size = web_socket
             .server_accept(&web_socket_context.sec_websocket_key, None, &mut ws_buffer)
@@ -780,7 +748,7 @@ Upgrade: websocket
 
         let mut rng = rand::thread_rng();
 
-        let mut ws_client = WebSocketClient::new_client(&mut rng);
+        let mut ws_client = WebSocket::new_client(&mut rng);
         ws_client.state = WebSocketState::Open;
 
         let mut ws_server = WebSocketServer::new_server();
@@ -825,10 +793,10 @@ Upgrade: websocket
         let mut buffer2: [u8; 1000] = [0; 1000];
 
         // how to create a client
-        let mut ws_client = WebSocket::new(true, rand::thread_rng());
+        let mut ws_client = WebSocket::new_client(rand::thread_rng());
 
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocket::new(false, EmptyRng::new());
+        let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
 
         // client sends a Text message
@@ -854,9 +822,9 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new(true, rand::thread_rng());
+        let mut ws_client = WebSocket::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocket::new(false, EmptyRng::new());
+        let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
 
         // server sends a Text message
@@ -882,9 +850,9 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new(true, rand::thread_rng());
+        let mut ws_client = WebSocket::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocket::new(false, EmptyRng::new());
+        let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
 
         let hello = "hello";
@@ -912,9 +880,9 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new(true, rand::thread_rng());
+        let mut ws_client = WebSocket::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocket::new(false, EmptyRng::new());
+        let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
 
         let hello = "hello";
@@ -951,9 +919,9 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new(true, rand::thread_rng());
+        let mut ws_client = WebSocket::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocket::new(false, EmptyRng::new());
+        let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
 
         let hello = "hello";
@@ -990,9 +958,9 @@ Upgrade: websocket
         let mut buffer2: [u8; 1000] = [0; 1000];
         // let mut rng = rand::thread_rng();
 
-        let mut ws_client = WebSocket::new(true, rand::thread_rng());
+        let mut ws_client = WebSocket::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocket::new(false, EmptyRng::new());
+        let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
 
         // client sends a fragmented Text message

@@ -88,7 +88,13 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
 
         if web_socket.state == WebSocketState::Open {
             // if the tcp stream has already been upgraded to a websocket connection
-            if !web_socket_read(&mut web_socket, &mut stream, &mut buffer1, &mut buffer2, num_bytes)? {
+            if !web_socket_read(
+                &mut web_socket,
+                &mut stream,
+                &mut buffer1,
+                &mut buffer2,
+                num_bytes,
+            )? {
                 println!("Websocket closed");
                 return Ok(());
             }

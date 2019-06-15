@@ -14,8 +14,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::Utf8Error;
 use ws::{
-    WebSocketClient, WebSocketCloseStatusCode, WebSocketReceiveMessageType,
-    WebSocketSendMessageType,
+    WebSocket, WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
 };
 
 #[derive(Debug)]
@@ -69,7 +68,7 @@ fn main() -> Result<()> {
 
     let mut buffer1: [u8; 4000] = [0; 4000];
     let mut buffer2: [u8; 4000] = [0; 4000];
-    let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+    let mut ws_client = WebSocket::new_client(rand::thread_rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
@@ -79,7 +78,7 @@ fn main() -> Result<()> {
         sub_protocols: None,
         additional_headers: None,
     };
-    let (len, web_socket_key) = ws_client.connect(&websocket_options, &mut buffer1)?;
+    let (len, web_socket_key) = ws_client.client_connect(&websocket_options, &mut buffer1)?;
     println!("Sending opening handshake: {} bytes", len);
     write_all(&mut stream, &buffer1[..len])?;
 
