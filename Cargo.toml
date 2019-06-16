@@ -1,12 +1,12 @@
 [package]
-name = "embedded-websockets"
+name = "embedded-websocket"
 version = "0.1.0"
 authors = ["David Haig"]
 edition = "2018"
 license = "MIT"
 repository = "https://github.com/ninjasource/embedded-websockets.git"
 description = "A lightweight websocket library for embedded systems (no_std)"
-keywords = ["websockets", "websocket", "embedded", "iot", "http"]
+keywords = ["websockets", "websocket", "embedded", "iot", "http", "no_std"]
 categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 

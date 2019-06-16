@@ -8,8 +8,8 @@
 // and terminate the connection.
 // Note that we are using the standard library in the demo but the websocket library remains no_std
 
-use embedded_websockets as ws;
-use embedded_websockets::WebSocketOptions;
+use embedded_websocket as ws;
+use embedded_websocket::WebSocketOptions;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::Utf8Error;
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
     let websocket_options = WebSocketOptions {
         path: "/chat",
         host: "localhost",
-        port: 1337,
+        origin: "http://localhost:1337",
         sub_protocols: None,
         additional_headers: None,
     };
@@ -105,14 +105,14 @@ fn main() -> Result<()> {
 
     match ws_result.message_type {
         WebSocketReceiveMessageType::Text => {
-            let s = std::str::from_utf8(&buffer2[..ws_result.num_bytes_to])?;
+            let s = std::str::from_utf8(&buffer2[..ws_result.len_to])?;
             println!("Text reply from server: {}", s);
         }
         _ => {
-            let s = std::str::from_utf8(&buffer2[..ws_result.num_bytes_to])?;
+            let s = std::str::from_utf8(&buffer2[..ws_result.len_to])?;
             println!(
                 "Unexpected response from server: {:?} {} bytes: {}",
-                ws_result.message_type, ws_result.num_bytes_to, s
+                ws_result.message_type, ws_result.len_to, s
             );
         }
     }
@@ -133,7 +133,7 @@ fn main() -> Result<()> {
         _ => {
             println!(
                 "Received unexpected message: {:?} {} bytes",
-                ws_result.message_type, ws_result.num_bytes_to
+                ws_result.message_type, ws_result.len_to
             );
         }
     }

@@ -13,7 +13,7 @@ use std::net::{TcpListener, TcpStream};
 use std::str::Utf8Error;
 use std::thread;
 
-use embedded_websockets as ws;
+use embedded_websocket as ws;
 use ws::{
     HttpHeader, WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketServer,
     WebSocketState,
@@ -172,12 +172,12 @@ fn web_socket_read(
     let ws_result = web_socket.read(&tcp_buffer[..num_bytes], ws_buffer)?;
     match ws_result.message_type {
         WebSocketReceiveMessageType::Text => {
-            let s = std::str::from_utf8(&ws_buffer[..ws_result.num_bytes_to])?;
+            let s = std::str::from_utf8(&ws_buffer[..ws_result.len_to])?;
             println!("Received Text: {}", s);
             let to_send = web_socket.write(
                 WebSocketSendMessageType::Text,
                 true,
-                &ws_buffer[..ws_result.num_bytes_to],
+                &ws_buffer[..ws_result.len_to],
                 tcp_buffer,
             )?;
             write_to_stream(stream, &tcp_buffer[..to_send])?;
@@ -192,7 +192,7 @@ fn web_socket_read(
             let to_send = web_socket.write(
                 WebSocketSendMessageType::CloseReply,
                 true,
-                &ws_buffer[..ws_result.num_bytes_to],
+                &ws_buffer[..ws_result.len_to],
                 tcp_buffer,
             )?;
             write_to_stream(stream, &tcp_buffer[..to_send])?;
@@ -202,7 +202,7 @@ fn web_socket_read(
             let to_send = web_socket.write(
                 WebSocketSendMessageType::Pong,
                 true,
-                &ws_buffer[..ws_result.num_bytes_to],
+                &ws_buffer[..ws_result.len_to],
                 tcp_buffer,
             )?;
             write_to_stream(stream, &tcp_buffer[..to_send])?;

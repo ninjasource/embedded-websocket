@@ -1,19 +1,60 @@
 use super::*;
-use core::convert::TryFrom;
 use heapless::{String, Vec};
 
+// NOTE: this struct is re-exported
+/// An http header struct that exposes websocket details
 pub struct HttpHeader {
+    /// The request uri (e.g. `/chat?id=123`) of the GET method used to identify the endpoint of
+    /// the connection. This allows multiple domains to be served by a single server.
+    /// This could also be used to send identifiable information about the client
     pub path: String<U128>,
+    /// If the http header was a valid upgrade request then this could contain the websocket
+    /// detail relating to it
     pub websocket_context: Option<WebSocketContext>,
 }
 
+// NOTE: this struct is re-exported
+/// Websocket details extracted from the http header
 pub struct WebSocketContext {
-    // Max 3 sub protocols of size 24 bytes each
-    pub sec_websocket_protocol_list: Vec<String<U24>, U3>,
-    pub sec_websocket_key: String<U24>,
+    /// The list of sub protocols is restricted to a maximum of 3
+    pub sec_websocket_protocol_list: Vec<WebSocketSubProtocol, U3>,
+    /// The websocket key user to build the accept string to complete the opening handshake
+    pub sec_websocket_key: WebSocketKey,
 }
 
-// this function is re-exported
+// NOTE: this function is re-exported
+/// Reads a buffer and extracts the HttpHeader information from it, including websocket specific information.
+///
+/// # Examples
+/// ```
+/// use embedded_websocket as ws;
+/// let client_request = "GET /chat HTTP/1.1
+/// Host: myserver.example.com
+/// Upgrade: websocket
+/// Connection: Upgrade
+/// Sec-WebSocket-Key: Z7OY1UwHOx/nkSz38kfPwg==
+/// Origin: http://example.com
+/// Sec-WebSocket-Protocol: chat, advancedchat
+/// Sec-WebSocket-Version: 13
+///
+/// ";
+///
+/// let http_header = ws::read_http_header(&client_request.as_bytes()).unwrap();
+/// let ws_context = http_header.websocket_context.unwrap();
+/// assert_eq!("Z7OY1UwHOx/nkSz38kfPwg==", ws_context.sec_websocket_key);
+/// assert_eq!("chat", ws_context.sec_websocket_protocol_list.get(0).unwrap().as_str());
+/// assert_eq!("advancedchat", ws_context.sec_websocket_protocol_list.get(1).unwrap().as_str());
+///
+/// ```
+/// # Errors
+/// * Will return `HttpHeaderNoPath` if no path is specified in the http header (e.g. /chat). This
+/// is the most likely error message to receive if the input buffer does not contain any part of a
+/// valid http header at all.
+/// * Will return `HttpHeaderIncomplete` if the input buffer does not contain a complete http header.
+/// Http headers must end with `\r\n\r\n` to be valid. Therefore, since http headers are not framed,
+/// (i.e. not length prefixed) the idea is to read from a network stream in a loop until you no
+/// longer receive a `HttpHeaderIncomplete` error code and that is when you know that the entire
+/// header has been read
 pub fn read_http_header(buffer: &[u8]) -> Result<HttpHeader> {
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut req = httparse::Request::new(&mut headers);
@@ -31,7 +72,7 @@ pub fn read_http_header(buffer: &[u8]) -> Result<HttpHeader> {
                 "Upgrade" => is_websocket_request = str::from_utf8(item.value)? == "websocket",
                 "Sec-WebSocket-Protocol" => {
                     // extract a csv list of supported sub protocols
-                    for item in str::from_utf8(item.value)?.split(',') {
+                    for item in str::from_utf8(item.value)?.split(", ") {
                         if sec_websocket_protocol_list.len()
                             < sec_websocket_protocol_list.capacity()
                         {
@@ -129,21 +170,16 @@ pub fn build_connect_handshake_request(
     rng.fill_bytes(&mut key);
     base64::encode(&key, &mut key_as_base64);
     let sec_websocket_key: String<U24> = String::from(str::from_utf8(&key_as_base64)?);
-    let port: String<U8> = String::try_from(websocket_options.port)?;
 
     http_request.push_str("GET ")?;
     http_request.push_str(websocket_options.path)?;
     http_request.push_str(" HTTP/1.1\r\nHost: ")?;
     http_request.push_str(websocket_options.host)?;
-    http_request.push_str(":")?;
-    http_request.push_str(port.as_str())?;
     http_request
         .push_str("\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ")?;
     http_request.push_str(sec_websocket_key.as_str())?;
-    http_request.push_str("\r\nOrigin: http://")?;
-    http_request.push_str(websocket_options.host)?;
-    http_request.push_str(":")?;
-    http_request.push_str(port.as_str())?;
+    http_request.push_str("\r\nOrigin: ")?;
+    http_request.push_str(websocket_options.origin)?;
 
     // turn sub protocol list into a CSV list
     http_request.push_str("\r\nSec-WebSocket-Protocol: ")?;
