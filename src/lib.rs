@@ -1,6 +1,3 @@
-// The MIT License (MIT)
-// Copyright (c) 2019 David Haig
-
 //! # Embedded Websocket
 //!
 //! `embedded_websocket` facilitates the encoding and decoding of websocket frames and can be used
