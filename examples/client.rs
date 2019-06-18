@@ -18,7 +18,7 @@ use ws::{
 };
 
 #[derive(Debug)]
-enum WebClientError {
+pub enum WebClientError {
     Io(std::io::Error),
     WebSocket(ws::Error),
     Utf8Error,
@@ -42,6 +42,61 @@ impl From<Utf8Error> for WebClientError {
     fn from(_: Utf8Error) -> WebClientError {
         WebClientError::Utf8Error
     }
+}
+
+// This is a template client example that is not functional but shows the basic required code
+pub fn template_client() -> Result<()> {
+    let mut buffer1: [u8; 1000] = [0; 1000];
+    let mut buffer2: [u8; 1000] = [0; 1000];
+    let mut websocket = ws::WebSocket::new_client(rand::thread_rng());
+
+    // initiate a websocket opening handshake
+    let websocket_options = WebSocketOptions {
+        path: "/chat",
+        host: "localhost",
+        origin: "http://localhost",
+        sub_protocols: None,
+        additional_headers: None,
+    };
+    let (_len, web_socket_key) = websocket.client_connect(&websocket_options, &mut buffer1)?;
+
+    // ... open TCP Stream and write len bytes from buffer1 to stream ...
+    // ... read some received_size data from a TCP stream into buffer1 ...
+    let received_size = 0;
+
+    // check the server response against the websocket_key we generated
+    websocket.client_accept(&web_socket_key, &mut buffer1[..received_size])?;
+
+    // send a Text websocket frame
+    let _len = websocket.write(
+        ws::WebSocketSendMessageType::Text,
+        true,
+        &"hello".as_bytes(),
+        &mut buffer1,
+    )?;
+
+    // ... write len bytes from buffer1 to TCP Stream ...
+    // ... read some received_size data from a TCP stream into buffer1 ...
+
+    // the server (in this case) echos the text frame back. Read it. You can check the ws_result for frame type
+    let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
+    let _response = std::str::from_utf8(&buffer2[..ws_result.len_to])?;
+
+    // initiate a close handshake
+    let _len = websocket.close(
+        ws::WebSocketCloseStatusCode::NormalClosure,
+        None,
+        &mut buffer1,
+    )?;
+
+    // ... write len bytes from buffer1 to TCP Stream ...
+    // ... read some received_size data from a TCP stream into buffer1 ...
+
+    // check the close handshake response from the server
+    let _ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
+
+    // ... close handshake is complete, close the TCP connection
+    Ok(())
 }
 
 fn write_all(stream: &mut TcpStream, buffer: &[u8]) -> Result<()> {

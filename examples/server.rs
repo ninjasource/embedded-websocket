@@ -22,7 +22,7 @@ use ws::{
 type Result<T> = std::result::Result<T, WebServerError>;
 
 #[derive(Debug)]
-enum WebServerError {
+pub enum WebServerError {
     Io(std::io::Error),
     WebSocket(ws::Error),
     Utf8Error,
@@ -44,6 +44,57 @@ impl From<Utf8Error> for WebServerError {
     fn from(_: Utf8Error) -> WebServerError {
         WebServerError::Utf8Error
     }
+}
+
+// This is a template server example that is not functional but shows the basic required code
+pub fn template_server() -> Result<()> {
+    let mut buffer1: [u8; 1000] = [0; 1000];
+    let mut buffer2: [u8; 1000] = [0; 1000];
+    let mut websocket = ws::WebSocketServer::new_server();
+
+    // ... read some data from a TCP stream into buffer1 ...
+    let received_size = 0;
+
+    // repeat the read above and check below until Error::HttpHeaderIncomplete is no longer returned
+    // (i.e. \r\n\r\n has been read from the stream as per the http spec)
+    let header = ws::read_http_header(&buffer1[..received_size])?;
+    let ws_context = header.websocket_context.unwrap();
+
+    // check for Some(http_header.websocket_context)
+    let _len = websocket.server_accept(&ws_context.sec_websocket_key, None, &mut buffer1)?;
+
+    // ... write len bytes from buffer1 to TCP Stream ...
+    // ... read some received_size data from a TCP stream into buffer1 ...
+
+    // in this particular example we get a Text message below which we simply want to echo back
+    let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
+
+    // text messages are always utf8 encoded strings
+    let _response = std::str::from_utf8(&buffer2[..ws_result.len_to])?; // log this
+
+    // echo text message back
+    let _len = websocket.write(
+        ws::WebSocketSendMessageType::Text,
+        true,
+        &buffer2[..ws_result.len_to],
+        &mut buffer1,
+    )?;
+
+    // ... write len bytes from buffer1 to TCP Stream ...
+    // ... read some received_size data from a TCP stream into buffer1 ...
+
+    // in this example say we get a CloseMustReply message below, we need to respond to complete the close handshake
+    let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
+    let _len = websocket.write(
+        ws::WebSocketSendMessageType::CloseReply,
+        true,
+        &buffer2[..ws_result.len_to],
+        &mut buffer1,
+    )?;
+
+    // ... write len bytes from buffer1 to TCP Stream...
+    // ... close the TCP Stream ...
+    Ok(())
 }
 
 fn main() -> std::io::Result<()> {
