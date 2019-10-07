@@ -7,6 +7,7 @@ use rand_core::RngCore;
 // Note that data masking does not require a cryptographically strong random number because
 // the key is sent with the payload anyway
 
+#[derive(Default)]
 pub struct EmptyRng {}
 
 impl EmptyRng {

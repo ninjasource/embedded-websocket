@@ -109,9 +109,9 @@ pub fn read_http_header(buffer: &[u8]) -> Result<HttpHeader> {
             websocket_context,
         };
 
-        return Ok(header);
+        Ok(header)
     } else {
-        return Err(Error::HttpHeaderIncomplete);
+        Err(Error::HttpHeaderIncomplete)
     }
 }
 

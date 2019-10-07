@@ -55,7 +55,7 @@ pub enum WebSocketSendMessageType {
 }
 
 impl WebSocketSendMessageType {
-    fn to_op_code(&self) -> WebSocketOpCode {
+    fn to_op_code(self) -> WebSocketOpCode {
         match self {
             WebSocketSendMessageType::Text => WebSocketOpCode::TextFrame,
             WebSocketSendMessageType::Binary => WebSocketOpCode::BinaryFrame,
@@ -247,7 +247,7 @@ enum WebSocketOpCode {
 }
 
 impl WebSocketOpCode {
-    fn to_message_type(&self) -> Result<WebSocketReceiveMessageType> {
+    fn to_message_type(self) -> Result<WebSocketReceiveMessageType> {
         match self {
             WebSocketOpCode::TextFrame => Ok(WebSocketReceiveMessageType::Text),
             WebSocketOpCode::BinaryFrame => Ok(WebSocketReceiveMessageType::Binary),
@@ -755,14 +755,13 @@ where
             to_buffer[header_size..header_size + MASK_KEY_SIZE].copy_from_slice(&mask_key);
             let to_buffer_start = header_size + MASK_KEY_SIZE;
 
-            let mut i = 0;
             // apply the mask key to every byte in the payload. This is a hot function
-            for (from, to) in from_buffer[..count]
+            for (i, (from, to)) in from_buffer[..count]
                 .iter()
                 .zip(&mut to_buffer[to_buffer_start..to_buffer_start + count])
+                .enumerate()
             {
                 *to = *from ^ mask_key[i % MASK_KEY_SIZE];
-                i = i + 1;
             }
 
             Ok(to_buffer_start + count)
@@ -816,11 +815,9 @@ fn read_into_buffer(
 
     match mask_key {
         Some(mask_key) => {
-            let mut i = 0;
             // apply the mask key to every byte in the payload. This is a hot function.
-            for (from, to) in from_buffer[..len_to_read].iter().zip(to_buffer) {
+            for (i, (from, to)) in from_buffer[..len_to_read].iter().zip(to_buffer).enumerate() {
                 *to = *from ^ mask_key[i % MASK_KEY_LEN];
-                i = i + 1;
             }
         }
         None => {
@@ -860,7 +857,7 @@ fn read_continuation(
         },
     };
 
-    continuation_read.count = continuation_read.count - len_read;
+    continuation_read.count -= len_read;
     frame
 }
 
@@ -886,7 +883,7 @@ fn read_frame(
     let is_mask_bit_set = (byte2 & MASK_FLAG) == MASK_FLAG;
     let (len, mut num_bytes_read) = read_length(byte2, &from_buffer[2..])?;
 
-    num_bytes_read = num_bytes_read + 2;
+    num_bytes_read += 2;
     let from_buffer = &from_buffer[num_bytes_read..];
 
     // reads the mask key from the payload if the is_mask_bit_set flag is set
@@ -896,7 +893,7 @@ fn read_frame(
         }
         let mut mask_key: [u8; MASK_KEY_LEN] = [0; MASK_KEY_LEN];
         mask_key.copy_from_slice(&from_buffer[..MASK_KEY_LEN]);
-        num_bytes_read = num_bytes_read + MASK_KEY_LEN;
+        num_bytes_read += MASK_KEY_LEN;
         Some(mask_key)
     } else {
         None
@@ -911,7 +908,7 @@ fn read_frame(
     };
 
     let has_continuation = len_read < len;
-    num_bytes_read = num_bytes_read + len_read;
+    num_bytes_read += len_read;
 
     let frame = match op_code {
         WebSocketOpCode::ConnectionClose => decode_close_frame(to_buffer, num_bytes_read, len_read),
