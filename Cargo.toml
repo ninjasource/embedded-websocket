@@ -3,10 +3,10 @@ name = "embedded-websocket"
 version = "0.1.1"
 authors = ["David Haig"]
 edition = "2018"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/ninjasource/embedded-websockets.git"
 description = "A lightweight websocket library for embedded systems (no_std)"
-keywords = ["websockets", "websocket", "embedded", "iot", "http", "no_std"]
+keywords = ["websockets", "websocket", "embedded", "no_std"]
 categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
