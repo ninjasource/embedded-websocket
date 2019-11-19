@@ -24,6 +24,7 @@ use embedded_websocket as ws;
 
 let mut buffer1: [u8; 1000] = [0; 1000];
 let mut buffer2: [u8; 1000] = [0; 1000];
+// use ws::random::EmptyRng::new() as an alternative below
 let mut websocket = ws::WebSocket::new_client(rand::thread_rng());
 
 // initiate a websocket opening handshake
