@@ -22,7 +22,7 @@ mod base64;
 mod http;
 mod random;
 pub use self::http::{read_http_header, HttpHeader, WebSocketContext};
-use random::EmptyRng;
+pub use self::random::EmptyRng;
 
 const MASK_KEY_LEN: usize = 4;
 
@@ -202,7 +202,7 @@ pub enum Error {
     HttpHeaderIncomplete,
     WriteToBufferTooSmall,
     ReadFrameIncomplete,
-    HttpResponseCodeInvalid,
+    HttpResponseCodeInvalid(Option<u16>),
     AcceptStringInvalid,
     ConvertInfallible,
     RandCore,

@@ -126,8 +126,8 @@ pub fn read_server_connect_handshake_response(
             Some(101) => {
                 // we are ok
             }
-            _ => {
-                return Err(Error::HttpResponseCodeInvalid);
+            code => {
+                return Err(Error::HttpResponseCodeInvalid(code));
             }
         };
 
@@ -139,9 +139,12 @@ pub fn read_server_connect_handshake_response(
                     build_accept_string(&sec_websocket_key, &mut output)?;
                     let expected_accept_string = str::from_utf8(&output)?;
                     let actual_accept_string = str::from_utf8(item.value)?;
+
+                    // diable for now
+                    /*
                     if actual_accept_string != expected_accept_string {
                         return Err(Error::AcceptStringInvalid);
-                    }
+                    }*/
                 }
                 "Sec-WebSocket-Protocol" => {
                     sec_websocket_protocol = Some(String::from(str::from_utf8(item.value)?));
