@@ -16,6 +16,10 @@ cargo run --example client
 ```
 or use this url in your browser `http://127.0.0.1:1337/`
 
+### Working example project
+
+See https://github.com/ninjasource/led-display-websocket-demo for a complete end-to-end example of this library working with and stm32 m3 bluepill MCU and an embedded ethernet card.
+
 ### Example websocket client usage:
 The following example initiates a opening handshake, checks the handshake response, sends a short message, initiates a close handshake, checks the close handshake response and quits.
 
