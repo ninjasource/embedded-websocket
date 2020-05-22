@@ -20,7 +20,7 @@ use sha1::Sha1;
 
 mod base64;
 mod http;
-mod random;
+pub mod random;
 pub use self::http::{read_http_header, HttpHeader, WebSocketContext};
 pub use self::random::EmptyRng;
 
