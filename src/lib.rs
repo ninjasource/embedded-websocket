@@ -650,7 +650,7 @@ where
         close_status: WebSocketCloseStatusCode,
         status_description: Option<&str>,
         to: &mut [u8],
-    ) -> Result<(usize)> {
+    ) -> Result<usize> {
         if self.state == WebSocketState::Open {
             self.state = WebSocketState::CloseSent;
             if let Some(status_description) = status_description {
