@@ -134,6 +134,17 @@ let _len = websocket.write(
 // ... close the TCP Stream ...
 ```
 
+### Upgrading from version "0.1.1" to "0.2.0"
+Be sure to update your Cargo.toml file to reference the following:
+```
+rand_core = "0.5"
+```
+and rand if you use it:
+```
+rand = "0.7"
+```
+Run Cargo update
+
 ### License 
 
 Licensed under either MIT or Apache-2.0 at your option
