@@ -1,6 +1,6 @@
 [package]
 name = "embedded-websocket"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["David Haig"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
