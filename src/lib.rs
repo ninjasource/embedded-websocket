@@ -4,7 +4,7 @@
 //! for both clients and servers. The library is intended to be used in constrained memory
 //! environments like embedded microcontrollers which cannot reference the rust standard library.
 //! It will work with arbitrarily small buffers regardless of websocket frame size as long as the
-//! websocket header can be read (2 - 14 bytes depending on the payload size and masking). </p>
+//! websocket header can be read (2 - 14 bytes depending on the payload size and masking).
 //! Since the library is essentially an encoder or decoder of byte slices, the developer is free to
 //! use whatever transport mechanism they chose. The examples in the source repository use the
 //! TcpStream from the standard library.
@@ -360,7 +360,7 @@ where
 
     /// Used by the server to accept an incoming client connection and build a websocket upgrade
     /// http response string. The client http header should be read with the `read_http_header`
-    /// function and the result should be passed to this function. </p>
+    /// function and the result should be passed to this function. 
     /// Websocket state will change from None -> Open if successful, otherwise None -> Aborted
     ///
     /// # Examples
@@ -523,7 +523,7 @@ where
     }
 
     /// Reads the payload from a websocket frame in buffer `from` into a buffer `to` and returns
-    /// metadata about the frame. </p>Since this function is designed to be called in a memory
+    /// metadata about the frame. Since this function is designed to be called in a memory
     /// constrained system we may not read the entire payload in one go. In each of the scenarios
     /// below the `read_result.end_of_message` flag would be `false`:
     /// * The payload is fragmented into multiple websocket frames (as per the websocket spec)
