@@ -298,10 +298,22 @@ pub struct WebSocketOptions<'a> {
 }
 
 /// Used to return a sized type from `WebSocket::new_server()`
-pub type WebSocketServer = WebSocket<EmptyRng>;
+pub type WebSocketServer = WebSocket<EmptyRng, Server>;
+
+/// Used to return a sized type from `WebSocketClient::new_client()`
+pub type WebSocketClient<T> = WebSocket<T, Client>;
+
+// Simple Typestate pattern for preventing panics and allowing reuse of underlying
+// read/read_frame/etc..
+pub enum Server {}
+pub enum Client {}
+
+pub trait WebSocketType {}
+impl WebSocketType for Server {}
+impl WebSocketType for Client {}
 
 /// Websocket client and server implementation
-pub struct WebSocket<T>
+pub struct WebSocket<T, S: WebSocketType>
 where
     T: RngCore,
 {
@@ -310,11 +322,13 @@ where
     continuation_frame_op_code: Option<WebSocketOpCode>,
     pub state: WebSocketState,
     continuation_read: Option<ContinuationRead>,
+    marker: core::marker::PhantomData<S>,
 }
 
-impl<T> WebSocket<T>
+impl<T, Type> WebSocket<T, Type>
 where
     T: RngCore,
+    Type: WebSocketType,
 {
     /// Creates a new websocket client by passing in a required random number generator
     ///
@@ -322,17 +336,18 @@ where
     /// ```
     /// use embedded_websocket as ws;
     /// use rand;
-    /// let mut ws_client = ws::WebSocket::new_client(rand::thread_rng());
+    /// let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
     ///
     /// assert_eq!(ws::WebSocketState::None, ws_client.state);
     /// ```
-    pub fn new_client(rng: T) -> WebSocket<T> {
+    pub fn new_client(rng: T) -> WebSocketClient<T> {
         WebSocket {
             is_client: true,
             rng,
             continuation_frame_op_code: None,
             state: WebSocketState::None,
             continuation_read: None,
+            marker: core::marker::PhantomData::<Client>,
         }
     }
 
@@ -355,12 +370,18 @@ where
             continuation_frame_op_code: None,
             state: WebSocketState::None,
             continuation_read: None,
+            marker: core::marker::PhantomData::<Server>,
         }
     }
+}
 
+impl<T> WebSocket<T, Server>
+where
+    T: RngCore,
+{
     /// Used by the server to accept an incoming client connection and build a websocket upgrade
     /// http response string. The client http header should be read with the `read_http_header`
-    /// function and the result should be passed to this function. 
+    /// function and the result should be passed to this function.
     /// Websocket state will change from None -> Open if successful, otherwise None -> Aborted
     ///
     /// # Examples
@@ -388,19 +409,12 @@ where
     /// * This function can return an `Utf8Error` if there was an error with the generation of the
     /// accept string. This should also be impossible but an error is preferable to a panic
     /// * Returns `WebsocketAlreadyOpen` if called on a websocket that is already open
-    ///
-    /// # Panics
-    /// Panics with `Server websocket expected` if the user calls this function as a client
-    /// websocket. This function should be use with a websocket created using `new_server()`
     pub fn server_accept(
         &mut self,
         sec_websocket_key: &WebSocketKey,
         sec_websocket_protocol: Option<&WebSocketSubProtocol>,
         to: &mut [u8],
     ) -> Result<usize> {
-        if self.is_client {
-            panic!("Server websocket expected");
-        }
         if self.state == WebSocketState::Open {
             return Err(Error::WebsocketAlreadyOpen);
         }
@@ -417,14 +431,19 @@ where
             }
         }
     }
+}
 
+impl<T> WebSocket<T, Client>
+where
+    T: RngCore,
+{
     /// Used by the client to initiate a websocket opening handshake
     ///
     /// # Examples
     /// ```
     /// use embedded_websocket as ws;
     /// let mut buffer: [u8; 2000] = [0; 2000];
-    /// let mut ws_client = ws::WebSocket::new_client(rand::thread_rng());
+    /// let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
     /// let sub_protocols = ["chat", "superchat"];
     /// let websocket_options = ws::WebSocketOptions {
     ///     path: "/chat",
@@ -451,18 +470,11 @@ where
     /// * This function can return an `Utf8Error` if there was an error with the generation of the
     /// accept string. This should be impossible but an error is preferable to a panic
     /// * Returns `WebsocketAlreadyOpen` if called on a websocket that is already open
-    ///
-    /// # Panics
-    /// Panics with `Client websocket expected` if the user calls this function as a server
-    /// websocket. This function should be use with a websocket created using `new_client()`
     pub fn client_connect(
         &mut self,
         websocket_options: &WebSocketOptions,
         to: &mut [u8],
     ) -> Result<(usize, WebSocketKey)> {
-        if !self.is_client {
-            panic!("Client websocket expected");
-        }
         if self.state == WebSocketState::Open {
             return Err(Error::WebsocketAlreadyOpen);
         }
@@ -482,7 +494,7 @@ where
     /// # Examples
     /// ```
     /// use embedded_websocket as ws;
-    /// let mut ws_client = ws::WebSocket::new_client(rand::thread_rng());
+    /// let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
     /// let ws_key = ws::WebSocketKey::from("Z7OY1UwHOx/nkSz38kfPwg==");
     /// let server_response_html = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Protocol: chat\r\nSec-WebSocket-Accept: ptPnPeDOTo6khJlzmLhOZSh2tAY=\r\n\r\n";    ///
     /// let (sub_protocol) = ws_client.client_accept(&ws_key, server_response_html.as_bytes())
@@ -521,7 +533,13 @@ where
             }
         }
     }
+}
 
+impl<T, Type> WebSocket<T, Type>
+where
+    T: RngCore,
+    Type: WebSocketType,
+{
     /// Reads the payload from a websocket frame in buffer `from` into a buffer `to` and returns
     /// metadata about the frame. Since this function is designed to be called in a memory
     /// constrained system we may not read the entire payload in one go. In each of the scenarios
@@ -546,7 +564,7 @@ where
     /// //                    h   e   l   l   o
     /// let buffer1 = [129,5,104,101,108,108,111];
     /// let mut buffer2: [u8; 128] = [0; 128];
-    /// let mut ws_client = ws::WebSocket::new_client(rand::thread_rng());
+    /// let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
     /// ws_client.state = ws::WebSocketState::Open; // skip the opening handshake
     /// let ws_result = ws_client.read(&buffer1, &mut buffer2).unwrap();
     ///
@@ -1094,7 +1112,7 @@ Upgrade: websocket
 
         let mut rng = rand::thread_rng();
 
-        let mut ws_client = WebSocket::new_client(&mut rng);
+        let mut ws_client = WebSocketClient::new_client(&mut rng);
         ws_client.state = WebSocketState::Open;
 
         let mut ws_server = WebSocketServer::new_server();
@@ -1139,7 +1157,7 @@ Upgrade: websocket
         let mut buffer2: [u8; 1000] = [0; 1000];
 
         // how to create a client
-        let mut ws_client = WebSocket::new_client(rand::thread_rng());
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
 
         ws_client.state = WebSocketState::Open;
         let mut ws_server = WebSocketServer::new_server();
@@ -1168,7 +1186,7 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new_client(rand::thread_rng());
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
         let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
@@ -1196,7 +1214,7 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new_client(rand::thread_rng());
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
         let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
@@ -1226,7 +1244,7 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new_client(rand::thread_rng());
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
         let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
@@ -1265,7 +1283,7 @@ Upgrade: websocket
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
 
-        let mut ws_client = WebSocket::new_client(rand::thread_rng());
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
         let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
@@ -1304,7 +1322,7 @@ Upgrade: websocket
         let mut buffer2: [u8; 1000] = [0; 1000];
         // let mut rng = rand::thread_rng();
 
-        let mut ws_client = WebSocket::new_client(rand::thread_rng());
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
         let mut ws_server = WebSocketServer::new_server();
         ws_server.state = WebSocketState::Open;
