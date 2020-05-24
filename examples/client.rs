@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::Utf8Error;
 use ws::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
+    WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
 };
 
 #[derive(Debug)]

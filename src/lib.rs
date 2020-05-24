@@ -10,6 +10,7 @@
 //! TcpStream from the standard library.
 
 #![no_std]
+#![deny(warnings)]
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use core::{cmp, result, str};

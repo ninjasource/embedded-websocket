@@ -137,8 +137,10 @@ pub fn read_server_connect_handshake_response(
                 "Sec-WebSocket-Accept" => {
                     let mut output = [0; 28];
                     build_accept_string(&sec_websocket_key, &mut output)?;
+
                     let expected_accept_string = str::from_utf8(&output)?;
                     let actual_accept_string = str::from_utf8(item.value)?;
+
                     if actual_accept_string != expected_accept_string {
                         return Err(Error::AcceptStringInvalid);
                     }
