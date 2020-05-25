@@ -508,17 +508,11 @@ where
     /// * Returns `AcceptStringInvalid` if the web server failed to return a valid accept string
     /// * Returns `HttpHeader(Version)` or some other varient if the HTTP response is not well formed
     /// * Returns `WebsocketAlreadyOpen` if called on a websocket that is already open
-    /// # Panics
-    /// Panics with `Client websocket expected` if the user calls this function as a server
-    /// websocket. This function should be use with a websocket created using `new_client()`
     pub fn client_accept(
         &mut self,
         sec_websocket_key: &WebSocketKey,
         from: &[u8],
     ) -> Result<Option<WebSocketSubProtocol>> {
-        if !self.is_client {
-            panic!("Client websocket expected");
-        }
         if self.state == WebSocketState::Open {
             return Err(Error::WebsocketAlreadyOpen);
         }

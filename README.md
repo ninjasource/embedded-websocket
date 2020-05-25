@@ -29,7 +29,7 @@ use embedded_websocket as ws;
 let mut buffer1: [u8; 1000] = [0; 1000];
 let mut buffer2: [u8; 1000] = [0; 1000];
 // use ws::random::EmptyRng::new() as an alternative below
-let mut websocket = ws::WebSocket::new_client(rand::thread_rng());
+let mut websocket = ws::WebSocketClient::new_client(rand::thread_rng());
 
 // initiate a websocket opening handshake
 let websocket_options = WebSocketOptions {
@@ -39,7 +39,7 @@ let websocket_options = WebSocketOptions {
     sub_protocols: None,
     additional_headers: None,
 };
-let (_len, web_socket_key) = websocket.client_connect(&websocket_options, &mut buffer1)?;
+let (len, web_socket_key) = websocket.client_connect(&websocket_options, &mut buffer1)?;
 
 // ... open TCP Stream and write len bytes from buffer1 to stream ...
 // ... read some received_size data from a TCP stream into buffer1 ...
@@ -49,7 +49,7 @@ let received_size = 0;
 websocket.client_accept(&web_socket_key, &mut buffer1[..received_size])?;
 
 // send a Text websocket frame
-let _len = websocket.write(
+let len = websocket.write(
     ws::WebSocketSendMessageType::Text,
     true,
     &"hello".as_bytes(),
@@ -61,7 +61,7 @@ let _len = websocket.write(
 
 // the server (in this case) echos the text frame back. Read it. You can check the ws_result for frame type
 let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
-let _response = std::str::from_utf8(&buffer2[..ws_result.len_to])?;
+let response = std::str::from_utf8(&buffer2[..ws_result.len_to])?;
 
 // initiate a close handshake
 let _len = websocket.close(
@@ -74,10 +74,9 @@ let _len = websocket.close(
 // ... read some received_size data from a TCP stream into buffer1 ...
 
 // check the close handshake response from the server
-let _ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
+let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
 
 // ... close handshake is complete, close the TCP connection
-
 ```
 
 ### Example websocket server usage:
@@ -99,7 +98,7 @@ let header = ws::read_http_header(&buffer1[..received_size])?;
 let ws_context = header.websocket_context.unwrap();
 
 // check for Some(http_header.websocket_context)
-let _len = websocket.server_accept(&ws_context.sec_websocket_key, None, &mut buffer1)?;
+let len = websocket.server_accept(&ws_context.sec_websocket_key, None, &mut buffer1)?;
 
 // ... write len bytes from buffer1 to TCP Stream ...
 // ... read some received_size data from a TCP stream into buffer1 ...
@@ -108,10 +107,10 @@ let _len = websocket.server_accept(&ws_context.sec_websocket_key, None, &mut buf
 let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
 
 // text messages are always utf8 encoded strings
-let _response = std::str::from_utf8(&buffer2[..ws_result.len_to])?; // log this
+let response = std::str::from_utf8(&buffer2[..ws_result.len_to])?; // log this
 
 // echo text message back
-let _len = websocket.write(
+let len = websocket.write(
     ws::WebSocketSendMessageType::Text,
     true,
     &buffer2[..ws_result.len_to],
@@ -123,7 +122,7 @@ let _len = websocket.write(
 
 // in this example say we get a CloseMustReply message below, we need to respond to complete the close handshake
 let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
-let _len = websocket.write(
+let len = websocket.write(
     ws::WebSocketSendMessageType::CloseReply,
     true,
     &buffer2[..ws_result.len_to],
@@ -144,6 +143,9 @@ and rand if you use it:
 rand = "0.7"
 ```
 Run Cargo update
+
+### Upgrading from version "0.2.0" to "0.3.0"
+Use ```ws::WebSocketClient::new_client(rand::thread_rng())``` to create a client and ```ws::WebSocketServer::new_server()``` to create a server
 
 ### License 
 
