@@ -146,6 +146,7 @@ Run Cargo update
 
 ### Upgrading from version "0.2.0" to "0.3.0"
 Use ```ws::WebSocketClient::new_client(rand::thread_rng())``` to create a client and ```ws::WebSocketServer::new_server()``` to create a server
+Use ```WebSocketClient<EmptyRng>``` instead of ```WebSocket<EmptyRng>```
 
 ### License 
 
