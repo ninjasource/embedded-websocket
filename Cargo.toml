@@ -18,4 +18,4 @@ httparse = { version = "1.3", default-features = false }
 rand_core = "0.5"
 
 [dev-dependencies]
-rand = "0.7"
+rand = "0.7.3"

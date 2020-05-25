@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::Utf8Error;
 use ws::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
+    WebSocketCloseStatusCode, WebSocketReceiveMessageType, WebSocketSendMessageType,
 };
 
 #[derive(Debug)]
@@ -48,7 +48,7 @@ impl From<Utf8Error> for WebClientError {
 pub fn template_client() -> Result<()> {
     let mut buffer1: [u8; 1000] = [0; 1000];
     let mut buffer2: [u8; 1000] = [0; 1000];
-    let mut websocket = ws::WebSocket::new_client(rand::thread_rng());
+    let mut websocket = ws::WebSocket::<_, ws::Client>::new_client(rand::thread_rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
@@ -123,7 +123,7 @@ fn main() -> Result<()> {
 
     let mut buffer1: [u8; 4000] = [0; 4000];
     let mut buffer2: [u8; 4000] = [0; 4000];
-    let mut ws_client = WebSocket::new_client(rand::thread_rng());
+    let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
