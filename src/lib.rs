@@ -12,7 +12,7 @@
 #![no_std]
 #![deny(warnings)]
 
-use byteorder::{BigEndian, ByteOrder, LittleEndian};
+use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};
 use heapless::consts::*; // these are for constants like U4, U16, U24, U32
 use heapless::{String, Vec};
@@ -745,7 +745,7 @@ where
             }
             to_buffer[0] = byte1;
             to_buffer[1] = mask_bit_set_as_byte | 126;
-            LittleEndian::write_u16(&mut to_buffer[2..], count as u16);
+            BigEndian::write_u16(&mut to_buffer[2..], count as u16);
             header_size = SHORT_HEADER_SIZE;
         } else {
             if payload_len + LONG_HEADER_SIZE > to_buffer.len() {
@@ -753,7 +753,7 @@ where
             }
             to_buffer[0] = byte1;
             to_buffer[1] = mask_bit_set_as_byte | 127;
-            LittleEndian::write_u64(&mut to_buffer[2..], count as u64);
+            BigEndian::write_u64(&mut to_buffer[2..], count as u64);
             header_size = LONG_HEADER_SIZE;
         }
 
@@ -1271,6 +1271,123 @@ Upgrade: websocket
             std::str::from_utf8(&buffer2[..ws_result.len_to]).unwrap()
         );
         assert_eq!(true, ws_result.end_of_message);
+    }
+
+    #[test]
+    fn send_large_frame() {
+        let buffer1 = [0u8; 15944];
+        let mut buffer2 = [0u8; 64000];
+        let mut buffer3 = [0u8; 64000];
+
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut ws_server = WebSocketServer::new_server();
+        ws_server.state = WebSocketState::Open;
+
+        ws_client
+            .write(
+                WebSocketSendMessageType::Binary,
+                true,
+                &buffer1,
+                &mut buffer2,
+            )
+            .unwrap();
+
+        let ws_result = ws_client.read(&buffer2, &mut buffer3).unwrap();
+        assert_eq!(true, ws_result.end_of_message);
+        assert_eq!(buffer1.len(), ws_result.len_to);
+    }
+
+    #[test]
+    fn receive_large_frame_multi_read() {
+        let mut buffer1 = [0_u8; 1000];
+        let mut buffer2 = [0_u8; 1000];
+
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut ws_server = WebSocketServer::new_server();
+        ws_server.state = WebSocketState::Open;
+
+        let message = "Hello, world. This is a long message that takes multiple reads";
+        ws_server
+            .write(
+                WebSocketSendMessageType::Text,
+                true,
+                &message.as_bytes(),
+                &mut buffer1,
+            )
+            .unwrap();
+
+        let mut buffer2_cursor = 0;
+        let ws_result = ws_client.read(&buffer1[..40], &mut buffer2).unwrap();
+        assert_eq!(false, ws_result.end_of_message);
+        buffer2_cursor += ws_result.len_to;
+        let ws_result = ws_client
+            .read(
+                &buffer1[ws_result.len_from..],
+                &mut buffer2[buffer2_cursor..],
+            )
+            .unwrap();
+        assert_eq!(true, ws_result.end_of_message);
+        buffer2_cursor += ws_result.len_to;
+
+        assert_eq!(
+            message,
+            std::str::from_utf8(&buffer2[..buffer2_cursor]).unwrap()
+        );
+    }
+
+    #[test]
+    fn multiple_messages_in_receive_buffer() {
+        let mut buffer1 = [0_u8; 1000];
+        let mut buffer2 = [0_u8; 1000];
+
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut ws_server = WebSocketServer::new_server();
+        ws_server.state = WebSocketState::Open;
+
+        let message1 = "Hello, world.";
+        let len = ws_client
+            .write(
+                WebSocketSendMessageType::Text,
+                true,
+                &message1.as_bytes(),
+                &mut buffer1,
+            )
+            .unwrap();
+        let message2 = "This is another message.";
+        ws_client
+            .write(
+                WebSocketSendMessageType::Text,
+                true,
+                &message2.as_bytes(),
+                &mut buffer1[len..],
+            )
+            .unwrap();
+
+        let mut buffer1_cursor = 0;
+        let mut buffer2_cursor = 0;
+        let ws_result = ws_server
+            .read(&buffer1[buffer1_cursor..], &mut buffer2)
+            .unwrap();
+        assert_eq!(true, ws_result.end_of_message);
+        buffer1_cursor += ws_result.len_from;
+        buffer2_cursor += ws_result.len_to;
+        let ws_result = ws_server
+            .read(&buffer1[buffer1_cursor..], &mut buffer2[buffer2_cursor..])
+            .unwrap();
+        assert_eq!(true, ws_result.end_of_message);
+        assert_eq!(
+            message1,
+            std::str::from_utf8(&buffer2[..buffer2_cursor]).unwrap()
+        );
+
+        assert_eq!(
+            message2,
+            std::str::from_utf8(&buffer2[buffer2_cursor..buffer2_cursor + ws_result.len_to])
+                .unwrap()
+        );
     }
 
     #[test]
