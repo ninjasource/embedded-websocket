@@ -133,7 +133,7 @@ fn main() -> Result<()> {
     };
     let (len, web_socket_key) = ws_client.client_connect(&websocket_options, &mut buffer1)?;
     println!("Sending opening handshake: {} bytes", len);
-    write_all(&mut stream, &buffer1[..len])?;
+    stream.write_all(&buffer1[..len])?;
 
     // read the response from the server and check it to complete the opening handshake
     let received_size = stream.read(&mut buffer1)?;
