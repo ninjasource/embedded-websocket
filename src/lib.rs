@@ -39,6 +39,8 @@ pub type WebSocketSubProtocol = String<U24>;
 /// Websocket send message type used when sending a websocket frame
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum WebSocketSendMessageType {
+    /// Continuation frame following Text or Binary message
+    Continuation = 0,
     /// A UTF8 encoded text string
     Text = 1,
     /// Binary data
@@ -55,6 +57,7 @@ pub enum WebSocketSendMessageType {
 impl WebSocketSendMessageType {
     fn to_op_code(self) -> WebSocketOpCode {
         match self {
+            WebSocketSendMessageType::Continuation => WebSocketOpCode::ContinuationFrame,
             WebSocketSendMessageType::Text => WebSocketOpCode::TextFrame,
             WebSocketSendMessageType::Binary => WebSocketOpCode::BinaryFrame,
             WebSocketSendMessageType::Ping => WebSocketOpCode::Ping,
@@ -631,7 +634,8 @@ where
     /// * Returns `WebSocketNotOpen` when the websocket is not open when this function is called
     /// * Returns `WriteToBufferTooSmall` when the `to` buffer is too small to fit the websocket
     /// frame header (2-14 bytes) plus the payload. Consider fragmenting the messages by making
-    /// multiple write calls with `end_of_message` set to `false` and the final call set to `true`
+    /// multiple write calls with `end_of_message` set to `false` and the final call set to `true`.
+    /// Each subsequent `write` after the first one must be `WebSocketSendMessageType::Continuation`
     pub fn write(
         &mut self,
         message_type: WebSocketSendMessageType,
