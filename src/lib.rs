@@ -321,6 +321,7 @@ where
     is_client: bool,
     rng: T,
     continuation_frame_op_code: Option<WebSocketOpCode>,
+    is_write_continuation: bool,
     pub state: WebSocketState,
     continuation_read: Option<ContinuationRead>,
     marker: core::marker::PhantomData<S>,
@@ -346,6 +347,7 @@ where
             is_client: true,
             rng,
             continuation_frame_op_code: None,
+            is_write_continuation: false,
             state: WebSocketState::None,
             continuation_read: None,
             marker: core::marker::PhantomData::<Client>,
@@ -369,6 +371,7 @@ where
             is_client: false,
             rng,
             continuation_frame_op_code: None,
+            is_write_continuation: false,
             state: WebSocketState::None,
             continuation_read: None,
             marker: core::marker::PhantomData::<Server>,
@@ -640,11 +643,14 @@ where
         to: &mut [u8],
     ) -> Result<usize> {
         if self.state == WebSocketState::Open || self.state == WebSocketState::CloseReceived {
-            let op_code = message_type.to_op_code();
+            let mut op_code = message_type.to_op_code();
             if op_code == WebSocketOpCode::ConnectionClose {
                 self.state = WebSocketState::Closed
+            } else if self.is_write_continuation {
+                op_code = WebSocketOpCode::ContinuationFrame;
             }
 
+            self.is_write_continuation = !end_of_message;
             self.write_frame(from, to, op_code, end_of_message)
         } else {
             Err(Error::WebSocketNotOpen)
@@ -699,7 +705,14 @@ where
                 Ok(result)
             }
             None => {
-                let (result, continuation_read) = read_frame(from_buffer, to_buffer)?;
+                let (mut result, continuation_read) = read_frame(from_buffer, to_buffer)?;
+
+                // override the op code we get from the result with our continuation frame opcode if it exists
+                if let Some(continuation_frame_op_code) = self.continuation_frame_op_code {
+                    result.op_code = continuation_frame_op_code;
+                }
+
+                // reset the continuation frame op code to None if this is the last fragment (or there is no fragmentation)
                 self.continuation_frame_op_code = if result.is_fin_bit_set {
                     None
                 } else {
@@ -1429,7 +1442,7 @@ Upgrade: websocket
     }
 
     #[test]
-    fn send_multi_frame_message() {
+    fn send_two_frame_message() {
         let mut buffer1: [u8; 1000] = [0; 1000];
         let mut buffer2: [u8; 1000] = [0; 1000];
         // let mut rng = rand::thread_rng();
@@ -1479,5 +1492,100 @@ Upgrade: websocket
         let received =
             std::str::from_utf8(&buffer2[..ws_result1.len_to + ws_result2.len_to]).unwrap();
         assert_eq!("Hello, World!", received);
+    }
+
+    #[test]
+    fn send_multi_frame_message() {
+        let mut buffer1: [u8; 1000] = [0; 1000];
+        let mut buffer2: [u8; 1000] = [0; 1000];
+
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut ws_server = WebSocketServer::new_server();
+        ws_server.state = WebSocketState::Open;
+
+        // server sends the first fragmented Text frame
+        let fragment1 = "fragment1";
+        let fragment1_num_bytes = ws_server
+            .write(
+                WebSocketSendMessageType::Text,
+                false,
+                &fragment1.as_bytes(),
+                &mut buffer1,
+            )
+            .unwrap();
+
+        // send fragment2 as a continuation frame
+        let fragment2 = "fragment2";
+        let fragment2_num_bytes = ws_server
+            .write(
+                WebSocketSendMessageType::Text,
+                false,
+                &fragment2.as_bytes(),
+                &mut buffer1[fragment1_num_bytes..],
+            )
+            .unwrap();
+
+        // send fragment3 as a continuation frame and indicate that this is the last frame
+        let fragment3 = "fragment3";
+        let _fragment3_num_bytes = ws_server
+            .write(
+                WebSocketSendMessageType::Text,
+                true,
+                &fragment3.as_bytes(),
+                &mut buffer1[fragment1_num_bytes + fragment2_num_bytes..],
+            )
+            .unwrap();
+
+        // check that the client receives the "fragment1" Text message
+        let ws_result = ws_client.read(&buffer1, &mut buffer2).unwrap();
+        assert_eq!(WebSocketReceiveMessageType::Text, ws_result.message_type);
+        let received = std::str::from_utf8(&buffer2[..ws_result.len_to]).unwrap();
+        assert_eq!(fragment1, received);
+        assert_eq!(ws_result.end_of_message, false);
+        let mut read_cursor = ws_result.len_from;
+
+        // check that the client receives the "fragment2" Text message
+        let ws_result = ws_client
+            .read(&buffer1[read_cursor..], &mut buffer2)
+            .unwrap();
+        assert_eq!(WebSocketReceiveMessageType::Text, ws_result.message_type);
+        let received = std::str::from_utf8(&buffer2[..ws_result.len_to]).unwrap();
+        assert_eq!(fragment2, received);
+        assert_eq!(ws_result.end_of_message, false);
+        read_cursor += ws_result.len_from;
+
+        // check that the client receives the "fragment3" Text message
+        let ws_result = ws_client
+            .read(&buffer1[read_cursor..], &mut buffer2)
+            .unwrap();
+        assert_eq!(WebSocketReceiveMessageType::Text, ws_result.message_type);
+        let received = std::str::from_utf8(&buffer2[..ws_result.len_to]).unwrap();
+        assert_eq!(fragment3, received);
+        assert_eq!(ws_result.end_of_message, true);
+
+        // check the actual bytes in the write buffer for fragment1
+        let (is_fin_bit_set, op_code) = read_first_byte(buffer1[0]);
+        assert_eq!(is_fin_bit_set, false);
+        assert_eq!(op_code, WebSocketOpCode::TextFrame);
+
+        // check the actual bytes in the write buffer for fragment2
+        let (is_fin_bit_set, op_code) = read_first_byte(buffer1[fragment1_num_bytes]);
+        assert_eq!(is_fin_bit_set, false);
+        assert_eq!(op_code, WebSocketOpCode::ContinuationFrame);
+
+        // check the actual bytes in the write buffer for fragment3
+        let (is_fin_bit_set, op_code) =
+            read_first_byte(buffer1[fragment1_num_bytes + fragment2_num_bytes]);
+        assert_eq!(is_fin_bit_set, true);
+        assert_eq!(op_code, WebSocketOpCode::ContinuationFrame);
+    }
+
+    fn read_first_byte(byte: u8) -> (bool, WebSocketOpCode) {
+        const FIN_BIT_FLAG: u8 = 0x80;
+        const OP_CODE_FLAG: u8 = 0x0F;
+        let is_fin_bit_set = (byte & FIN_BIT_FLAG) == FIN_BIT_FLAG;
+        let op_code = get_op_code(byte & OP_CODE_FLAG).unwrap();
+        (is_fin_bit_set, op_code)
     }
 }
