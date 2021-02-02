@@ -3,6 +3,13 @@ A lightweight rust websocket library for embedded systems (no_std)
 
 This library facilitates the encoding and decoding of websocket messages and can be used for both clients and servers. The library is intended to be used in constrained memory environments like embedded microcontrollers which cannot reference the rust standard library. The library will work with arbitrarily small buffers regardless of websocket frame size as long as the websocket header can be read (2 - 14 bytes depending)
 
+### No_std support
+
+You can use this library without linking the rust standard library. In your Cargo.toml file make sure you set the default features to false. You will not be able to use modules that require the standard library like `framer`. For example:
+```
+embedded-websocket = { version = "x.x.x", default-features = false }
+```
+
 ### Running the examples
 
 To run the demo web server
@@ -24,59 +31,44 @@ See https://github.com/ninjasource/led-display-websocket-demo for a complete end
 The following example initiates a opening handshake, checks the handshake response, sends a short message, initiates a close handshake, checks the close handshake response and quits.
 
 ```rust
-use embedded_websocket as ws;
+    use embedded_websocket as ws;
+    use std::net::TcpStream;
 
-let mut buffer1: [u8; 1000] = [0; 1000];
-let mut buffer2: [u8; 1000] = [0; 1000];
-// use ws::random::EmptyRng::new() as an alternative below
-let mut websocket = ws::WebSocketClient::new_client(rand::thread_rng());
+    // open a TCP stream to localhost port 1337
+    let address = "127.0.0.1:1337";
+    println!("Connecting to: {}", address);
+    let mut stream = TcpStream::connect(address)?;
+    println!("Connected.");
 
-// initiate a websocket opening handshake
-let websocket_options = WebSocketOptions {
-    path: "/chat",
-    host: "localhost",
-    origin: "http://localhost",
-    sub_protocols: None,
-    additional_headers: None,
-};
-let (len, web_socket_key) = websocket.client_connect(&websocket_options, &mut buffer1)?;
+    let mut read_buf: [u8; 4000] = [0; 4000];
+    let mut write_buf: [u8; 4000] = [0; 4000];
+    let mut frame_buf: [u8; 4000] = [0; 4000];
+    let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
 
-// ... open TCP Stream and write len bytes from buffer1 to stream ...
-// ... read some received_size data from a TCP stream into buffer1 ...
-let received_size = 0;
+    // initiate a websocket opening handshake
+    let websocket_options = ws::WebSocketOptions {
+        path: "/chat",
+        host: "localhost",
+        origin: "http://localhost:1337",
+        sub_protocols: None,
+        additional_headers: None,
+    };
 
-// check the server response against the websocket_key we generated
-websocket.client_accept(&web_socket_key, &mut buffer1[..received_size])?;
+    let mut websocket = ws::framer::Framer::new(&mut read_buf, &mut write_buf, &mut ws_client, &mut stream);
+    websocket.connect(&websocket_options)?;
 
-// send a Text websocket frame
-let len = websocket.write(
-    ws::WebSocketSendMessageType::Text,
-    true,
-    &"hello".as_bytes(),
-    &mut buffer1,
-)?;
+    let message = "Hello, World!";
+    websocket.write(ws::WebSocketSendMessageType::Text, true, message.as_bytes())?;
 
-// ... write len bytes from buffer1 to TCP Stream ...
-// ... read some received_size data from a TCP stream into buffer1 ...
+    while let Some(s) = websocket.read_text(&mut frame_buf)? {
+        println!("Received: {}", s);
 
-// the server (in this case) echos the text frame back. Read it. You can check the ws_result for frame type
-let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
-let response = std::str::from_utf8(&buffer2[..ws_result.len_to])?;
+        // close the websocket after receiving the first message
+        websocket.close(ws::WebSocketCloseStatusCode::NormalClosure, None)?;
+        println!("Sent close handshake");
+    }
 
-// initiate a close handshake
-let _len = websocket.close(
-    ws::WebSocketCloseStatusCode::NormalClosure,
-    None,
-    &mut buffer1,
-)?;
-
-// ... write len bytes from buffer1 to TCP Stream ...
-// ... read some received_size data from a TCP stream into buffer1 ...
-
-// check the close handshake response from the server
-let ws_result = websocket.read(&buffer1[..received_size], &mut buffer2)?;
-
-// ... close handshake is complete, close the TCP connection
+    println!("Connection closed");    
 ```
 
 ### Example websocket server usage:

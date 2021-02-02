@@ -9,7 +9,8 @@
 //! use whatever transport mechanism they chose. The examples in the source repository use the
 //! TcpStream from the standard library.
 
-#![no_std]
+// support for websockets without using the standard library
+#![cfg_attr(not(feature = "std"), no_std)]
 #![deny(warnings)]
 
 use byteorder::{BigEndian, ByteOrder};
@@ -24,6 +25,10 @@ mod http;
 pub mod random;
 pub use self::http::{read_http_header, HttpHeader, WebSocketContext};
 pub use self::random::EmptyRng;
+
+// support for streaming features if using the standard library
+#[cfg(feature = "std")]
+pub mod framer;
 
 const MASK_KEY_LEN: usize = 4;
 

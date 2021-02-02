@@ -1,6 +1,6 @@
 [package]
 name = "embedded-websocket"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["David Haig"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -19,3 +19,7 @@ rand_core = "0.6"
 
 [dev-dependencies]
 rand = "0.8.3"
+
+[features]
+default = ["std"]
+std = []
