@@ -1,26 +1,49 @@
-// NOTE: this module requires using the standard library
+// This module helps you work with the websocket library using a stream of data rather than using it as a raw codec.
+// This is the most common use case when working with websockets and is recommended due to the hand shaky nature of
+// the protocol as well as the fact that an input buffer can contain multiple websocket frames or maybe only a fragment of one.
+// This module allows you to work with discrete websocket frames rather than the multiple fragments you read off a stream.
+// NOTE: if you are using the standard library then you can use the built in Read and Write traits from std otherwise
+//       you have to implement the Read and Write traits specified below
 
 use crate::{
     WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType,
     WebSocketSendMessageType, WebSocketType,
 };
+use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
-use std::cmp::min;
-use std::{
-    io::{Read, Write},
-    str::Utf8Error,
-};
+
+#[cfg(feature = "std")]
+use std::io::{Read, Write};
+
+#[cfg(feature = "std")]
+use std::io::Error as IoError;
+
+#[cfg(not(feature = "std"))]
+pub enum IoError {
+    ReadError,
+    WriteError,
+}
+
+#[cfg(not(feature = "std"))]
+pub trait Read {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, IoError>;
+}
+
+#[cfg(not(feature = "std"))]
+pub trait Write {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), IoError>;
+}
 
 #[derive(Debug)]
 pub enum FramerError {
-    Io(std::io::Error),
+    Io(IoError),
     FrameTooLarge(usize),
     Utf8(Utf8Error),
     WebSocket(crate::Error),
 }
 
-impl From<std::io::Error> for FramerError {
-    fn from(err: std::io::Error) -> Self {
+impl From<IoError> for FramerError {
+    fn from(err: IoError) -> Self {
         FramerError::Io(err)
     }
 }
@@ -66,7 +89,7 @@ where
         // read the response from the server and check it to complete the opening handshake
         let received_size = self.stream.read(&mut self.read_buf)?;
         self.websocket
-            .client_accept(&web_socket_key, &mut self.read_buf[..received_size])?;
+            .client_accept(&web_socket_key, &self.read_buf[..received_size])?;
         Ok(())
     }
 }
@@ -130,7 +153,7 @@ where
         frame_buf: &'b mut [u8],
     ) -> Result<Option<&'b str>, FramerError> {
         if let Some(frame) = self.next(frame_buf, WebSocketReceiveMessageType::Text)? {
-            Ok(Some(std::str::from_utf8(frame)?))
+            Ok(Some(core::str::from_utf8(frame)?))
         } else {
             Ok(None)
         }
@@ -210,9 +233,9 @@ where
         }
     }
 
-    fn send_back<'b>(
+    fn send_back(
         &mut self,
-        frame_buf: &'b mut [u8],
+        frame_buf: &'_ mut [u8],
         len_to: usize,
         send_message_type: WebSocketSendMessageType,
     ) -> Result<(), FramerError> {
@@ -221,7 +244,7 @@ where
         let len = self
             .websocket
             .write(send_message_type, true, from, &mut self.write_buf)?;
-        self.stream.write(&self.write_buf[..len])?;
+        self.stream.write_all(&self.write_buf[..len])?;
         Ok(())
     }
 }

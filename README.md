@@ -68,6 +68,10 @@ The following example initiates a opening handshake, checks the handshake respon
         println!("Sent close handshake");
     }
 
+    while let Some(s) = websocket.read_text(&mut frame_buf)? {
+        println!("Received: {}", s);
+    }
+
     println!("Connection closed");    
 ```
 

@@ -26,8 +26,8 @@ pub mod random;
 pub use self::http::{read_http_header, HttpHeader, WebSocketContext};
 pub use self::random::EmptyRng;
 
-// support for streaming features if using the standard library
-#[cfg(feature = "std")]
+// support for working with discrete websocket frames when using IO streams
+// start here!!
 pub mod framer;
 
 const MASK_KEY_LEN: usize = 4;
