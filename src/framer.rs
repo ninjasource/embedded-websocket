@@ -19,6 +19,7 @@ use std::io::{Read, Write};
 use std::io::Error as IoError;
 
 #[cfg(not(feature = "std"))]
+#[derive(Debug)]
 pub enum IoError {
     ReadError,
     WriteError,
