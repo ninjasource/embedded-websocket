@@ -5,7 +5,10 @@
 // NOTE: if you are using the standard library then you can use the built in Read and Write traits from std otherwise
 //       you have to implement the Read and Write traits specified below
 
-use crate::{WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketState, WebSocketType};
+use crate::{
+    WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType,
+    WebSocketSendMessageType, WebSocketState, WebSocketType,
+};
 use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
 
@@ -18,8 +21,8 @@ use std::io::Error as IoError;
 #[cfg(not(feature = "std"))]
 #[derive(PartialEq, Debug)]
 pub enum IoError {
-    ReadError,
-    WriteError,
+    Read,
+    Write,
 }
 
 #[cfg(not(feature = "std"))]
