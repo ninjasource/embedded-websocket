@@ -36,17 +36,22 @@ fn main() -> Result<(), FramerError> {
         additional_headers: None,
     };
 
-    let mut websocket = Framer::new(&mut read_buf, &mut write_buf, &mut ws_client, &mut stream);
-    websocket.connect(&websocket_options)?;
+    let mut websocket = Framer::new(&mut read_buf, &mut write_buf, &mut ws_client);
+    websocket.connect(&mut stream, &websocket_options)?;
 
     let message = "Hello, World!";
-    websocket.write(WebSocketSendMessageType::Text, true, message.as_bytes())?;
+    websocket.write(
+        &mut stream,
+        WebSocketSendMessageType::Text,
+        true,
+        message.as_bytes(),
+    )?;
 
-    while let Some(s) = websocket.read_text(&mut frame_buf)? {
+    while let Some(s) = websocket.read_text(&mut stream, &mut frame_buf)? {
         println!("Received: {}", s);
 
         // close the websocket after receiving the first reply
-        websocket.close(WebSocketCloseStatusCode::NormalClosure, None)?;
+        websocket.close(&mut stream, WebSocketCloseStatusCode::NormalClosure, None)?;
         println!("Sent close handshake");
     }
 

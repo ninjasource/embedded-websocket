@@ -5,10 +5,7 @@
 // NOTE: if you are using the standard library then you can use the built in Read and Write traits from std otherwise
 //       you have to implement the Read and Write traits specified below
 
-use crate::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType,
-    WebSocketSendMessageType, WebSocketType,
-};
+use crate::{WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketState, WebSocketType};
 use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
 
@@ -19,6 +16,7 @@ use std::io::{Read, Write};
 use std::io::Error as IoError;
 
 #[cfg(not(feature = "std"))]
+#[derive(PartialEq, Debug)]
 pub enum IoError {
     ReadError,
     WriteError,
@@ -60,11 +58,10 @@ impl From<crate::Error> for FramerError {
     }
 }
 
-pub struct Framer<'a, TRng, TWebSocketType, TStream>
+pub struct Framer<'a, TRng, TWebSocketType>
 where
     TRng: RngCore,
     TWebSocketType: WebSocketType,
-    TStream: Read + Write,
 {
     read_buf: &'a mut [u8],
     write_buf: &'a mut [u8],
@@ -72,33 +69,37 @@ where
     frame_cursor: usize,
     read_len: usize,
     websocket: &'a mut WebSocket<TRng, TWebSocketType>,
-    stream: &'a mut TStream,
 }
 
-impl<'a, TRng, TStream> Framer<'a, TRng, crate::Client, TStream>
+impl<'a, TRng> Framer<'a, TRng, crate::Client>
 where
     TRng: RngCore,
-    TStream: Read + Write,
 {
-    pub fn connect(&mut self, websocket_options: &WebSocketOptions) -> Result<(), FramerError> {
+    pub fn connect<TStream>(
+        &mut self,
+        stream: &mut TStream,
+        websocket_options: &WebSocketOptions,
+    ) -> Result<(), FramerError>
+    where
+        TStream: Read + Write,
+    {
         let (len, web_socket_key) = self
             .websocket
             .client_connect(&websocket_options, &mut self.write_buf)?;
-        self.stream.write_all(&self.write_buf[..len])?;
+        stream.write_all(&self.write_buf[..len])?;
 
         // read the response from the server and check it to complete the opening handshake
-        let received_size = self.stream.read(&mut self.read_buf)?;
+        let received_size = stream.read(&mut self.read_buf)?;
         self.websocket
             .client_accept(&web_socket_key, &self.read_buf[..received_size])?;
         Ok(())
     }
 }
 
-impl<'a, TRng, TWebSocketType, TStream> Framer<'a, TRng, TWebSocketType, TStream>
+impl<'a, TRng, TWebSocketType> Framer<'a, TRng, TWebSocketType>
 where
     TRng: RngCore,
     TWebSocketType: WebSocketType,
-    TStream: Read + Write,
 {
     // read and write buffers are usually quite small (4KB) and can be smaller
     // than the frame buffer but use whatever is is appropriate for your stream
@@ -106,7 +107,6 @@ where
         read_buf: &'a mut [u8],
         write_buf: &'a mut [u8],
         websocket: &'a mut WebSocket<TRng, TWebSocketType>,
-        stream: &'a mut TStream,
     ) -> Self {
         Self {
             read_buf,
@@ -115,25 +115,30 @@ where
             frame_cursor: 0,
             read_len: 0,
             websocket,
-            stream,
         }
+    }
+
+    pub fn state(&self) -> WebSocketState {
+        self.websocket.state
     }
 
     // calling close on a websocket that has already been closed by the other party has no effect
     pub fn close(
         &mut self,
+        stream: &mut impl Write,
         close_status: WebSocketCloseStatusCode,
         status_description: Option<&str>,
     ) -> Result<(), FramerError> {
         let len = self
             .websocket
             .close(close_status, status_description, self.write_buf)?;
-        self.stream.write_all(&self.write_buf[..len])?;
+        stream.write_all(&self.write_buf[..len])?;
         Ok(())
     }
 
     pub fn write(
         &mut self,
+        stream: &mut impl Write,
         message_type: WebSocketSendMessageType,
         end_of_message: bool,
         frame_buf: &[u8],
@@ -141,18 +146,22 @@ where
         let len = self
             .websocket
             .write(message_type, end_of_message, frame_buf, self.write_buf)?;
-        self.stream.write_all(&self.write_buf[..len])?;
+        stream.write_all(&self.write_buf[..len])?;
         Ok(())
     }
 
     // frame_buf should be large enough to hold an entire websocket text frame
     // this function will block until it has recieved a full websocket frame.
     // It will wait until the last fragmented frame has arrived.
-    pub fn read_text<'b>(
+    pub fn read_text<'b, TStream>(
         &mut self,
+        stream: &mut TStream,
         frame_buf: &'b mut [u8],
-    ) -> Result<Option<&'b str>, FramerError> {
-        if let Some(frame) = self.next(frame_buf, WebSocketReceiveMessageType::Text)? {
+    ) -> Result<Option<&'b str>, FramerError>
+    where
+        TStream: Read + Write,
+    {
+        if let Some(frame) = self.next(stream, frame_buf, WebSocketReceiveMessageType::Text)? {
             Ok(Some(core::str::from_utf8(frame)?))
         } else {
             Ok(None)
@@ -162,21 +171,29 @@ where
     // frame_buf should be large enough to hold an entire websocket binary frame
     // this function will block until it has recieved a full websocket frame.
     // It will wait until the last fragmented frame has arrived.
-    pub fn read_binary<'b>(
+    pub fn read_binary<'b, TStream>(
         &mut self,
+        stream: &mut TStream,
         frame_buf: &'b mut [u8],
-    ) -> Result<Option<&'b [u8]>, FramerError> {
-        self.next(frame_buf, WebSocketReceiveMessageType::Binary)
+    ) -> Result<Option<&'b [u8]>, FramerError>
+    where
+        TStream: Read + Write,
+    {
+        self.next(stream, frame_buf, WebSocketReceiveMessageType::Binary)
     }
 
-    fn next<'b>(
+    fn next<'b, TStream>(
         &mut self,
+        stream: &mut TStream,
         frame_buf: &'b mut [u8],
         message_type: WebSocketReceiveMessageType,
-    ) -> Result<Option<&'b [u8]>, FramerError> {
+    ) -> Result<Option<&'b [u8]>, FramerError>
+    where
+        TStream: Read + Write,
+    {
         loop {
             if self.read_cursor == 0 || self.read_cursor == self.read_len {
-                self.read_len = self.stream.read(self.read_buf)?;
+                self.read_len = stream.read(self.read_buf)?;
                 self.read_cursor = 0;
             }
 
@@ -212,6 +229,7 @@ where
                     }
                     WebSocketReceiveMessageType::CloseMustReply => {
                         self.send_back(
+                            stream,
                             frame_buf,
                             ws_result.len_to,
                             WebSocketSendMessageType::CloseReply,
@@ -221,6 +239,7 @@ where
                     WebSocketReceiveMessageType::CloseCompleted => return Ok(None),
                     WebSocketReceiveMessageType::Ping => {
                         self.send_back(
+                            stream,
                             frame_buf,
                             ws_result.len_to,
                             WebSocketSendMessageType::Pong,
@@ -235,6 +254,7 @@ where
 
     fn send_back(
         &mut self,
+        stream: &mut impl Write,
         frame_buf: &'_ mut [u8],
         len_to: usize,
         send_message_type: WebSocketSendMessageType,
@@ -244,7 +264,7 @@ where
         let len = self
             .websocket
             .write(send_message_type, true, from, &mut self.write_buf)?;
-        self.stream.write_all(&self.write_buf[..len])?;
+        stream.write_all(&self.write_buf[..len])?;
         Ok(())
     }
 }

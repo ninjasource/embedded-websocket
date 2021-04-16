@@ -5,7 +5,7 @@ This library facilitates the encoding and decoding of websocket messages and can
 
 ### No_std support
 
-You can use this library without linking the rust standard library. In your Cargo.toml file make sure you set the default features to false. You will not be able to use modules that require the standard library like `framer`. For example:
+You can use this library without linking the rust standard library. In your Cargo.toml file make sure you set the default features to false. If you use the module `framer` you will have to implement the Read and Write traits in that module because they are not available in no_std. For example:
 ```
 embedded-websocket = { version = "x.x.x", default-features = false }
 ```
