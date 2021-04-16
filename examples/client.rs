@@ -22,9 +22,10 @@ fn main() -> Result<(), FramerError> {
     let mut stream = TcpStream::connect(address)?;
     println!("Connected.");
 
-    let mut read_buf: [u8; 4000] = [0; 4000];
-    let mut write_buf: [u8; 4000] = [0; 4000];
-    let mut frame_buf: [u8; 4000] = [0; 4000];
+    let mut read_buf = [0; 4000];
+    let mut read_cursor = 0;
+    let mut write_buf = [0; 4000];
+    let mut frame_buf = [0; 4000];
     let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
 
     // initiate a websocket opening handshake
@@ -36,7 +37,12 @@ fn main() -> Result<(), FramerError> {
         additional_headers: None,
     };
 
-    let mut websocket = Framer::new(&mut read_buf, &mut write_buf, &mut ws_client);
+    let mut websocket = Framer::new(
+        &mut read_buf,
+        &mut read_cursor,
+        &mut write_buf,
+        &mut ws_client,
+    );
     websocket.connect(&mut stream, &websocket_options)?;
 
     let message = "Hello, World!";

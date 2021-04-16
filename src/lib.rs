@@ -15,7 +15,7 @@
 
 use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};
-use heapless::consts::*; // these are for constants like U4, U16, U24, U32
+use heapless::consts::{U1024, U24, U256, U3, U64};
 use heapless::{String, Vec};
 use rand_core::RngCore;
 use sha1::Sha1;
@@ -23,7 +23,7 @@ use sha1::Sha1;
 mod base64;
 mod http;
 pub mod random;
-pub use self::http::{read_http_header, HttpHeader, WebSocketContext};
+pub use self::http::{read_http_header, WebSocketContext};
 pub use self::random::EmptyRng;
 
 // support for working with discrete websocket frames when using IO streams
@@ -506,9 +506,10 @@ where
     /// let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
     /// let ws_key = ws::WebSocketKey::from("Z7OY1UwHOx/nkSz38kfPwg==");
     /// let server_response_html = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Protocol: chat\r\nSec-WebSocket-Accept: ptPnPeDOTo6khJlzmLhOZSh2tAY=\r\n\r\n";    ///
-    /// let (sub_protocol) = ws_client.client_accept(&ws_key, server_response_html.as_bytes())
+    /// let (len, sub_protocol) = ws_client.client_accept(&ws_key, server_response_html.as_bytes())
     ///     .unwrap();
     ///
+    /// assert_eq!(159, len);
     /// assert_eq!("chat", sub_protocol.unwrap());
     /// ```
     /// # Errors
@@ -520,16 +521,17 @@ where
         &mut self,
         sec_websocket_key: &WebSocketKey,
         from: &[u8],
-    ) -> Result<Option<WebSocketSubProtocol>> {
+    ) -> Result<(usize, Option<WebSocketSubProtocol>)> {
         if self.state == WebSocketState::Open {
             return Err(Error::WebsocketAlreadyOpen);
         }
 
         match http::read_server_connect_handshake_response(sec_websocket_key, from) {
-            Ok(sec_websocket_protocol) => {
+            Ok((len, sec_websocket_protocol)) => {
                 self.state = WebSocketState::Open;
-                Ok(sec_websocket_protocol)
+                Ok((len, sec_websocket_protocol))
             }
+            Err(Error::HttpHeaderIncomplete) => Err(Error::HttpHeaderIncomplete),
             Err(e) => {
                 self.state = WebSocketState::Aborted;
                 Err(e)
@@ -1064,8 +1066,11 @@ Upgrade: websocket
 
 ";
 
-        let http_header = read_http_header(&client_request.as_bytes()).unwrap();
-        let web_socket_context = http_header.websocket_context.unwrap();
+        let mut headers = [httparse::EMPTY_HEADER; 16];
+        let mut request = httparse::Request::new(&mut headers);
+        request.parse(client_request.as_bytes()).unwrap();
+        let headers = headers.iter().map(|f| (f.name, f.value));
+        let web_socket_context = read_http_header(headers).unwrap().unwrap();
         assert_eq!(
             "Z7OY1UwHOx/nkSz38kfPwg==",
             web_socket_context.sec_websocket_key

@@ -6,11 +6,13 @@
 //       you have to implement the Read and Write traits specified below
 
 use crate::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType,
-    WebSocketSendMessageType, WebSocketState, WebSocketType,
+    WebSocket, WebSocketCloseStatusCode, WebSocketContext, WebSocketOptions,
+    WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketState, WebSocketSubProtocol,
+    WebSocketType,
 };
 use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
+use std::usize;
 
 #[cfg(feature = "std")]
 use std::io::{Read, Write};
@@ -19,7 +21,7 @@ use std::io::{Read, Write};
 use std::io::Error as IoError;
 
 #[cfg(not(feature = "std"))]
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub enum IoError {
     Read,
     Write,
@@ -40,6 +42,7 @@ pub enum FramerError {
     Io(IoError),
     FrameTooLarge(usize),
     Utf8(Utf8Error),
+    HttpHeader(httparse::Error),
     WebSocket(crate::Error),
 }
 
@@ -61,6 +64,12 @@ impl From<crate::Error> for FramerError {
     }
 }
 
+impl From<httparse::Error> for FramerError {
+    fn from(err: httparse::Error) -> FramerError {
+        FramerError::HttpHeader(err)
+    }
+}
+
 pub struct Framer<'a, TRng, TWebSocketType>
 where
     TRng: RngCore,
@@ -68,7 +77,7 @@ where
 {
     read_buf: &'a mut [u8],
     write_buf: &'a mut [u8],
-    read_cursor: usize,
+    read_cursor: &'a mut usize,
     frame_cursor: usize,
     read_len: usize,
     websocket: &'a mut WebSocket<TRng, TWebSocketType>,
@@ -82,7 +91,7 @@ where
         &mut self,
         stream: &mut TStream,
         websocket_options: &WebSocketOptions,
-    ) -> Result<(), FramerError>
+    ) -> Result<Option<WebSocketSubProtocol>, FramerError>
     where
         TStream: Read + Write,
     {
@@ -90,11 +99,54 @@ where
             .websocket
             .client_connect(&websocket_options, &mut self.write_buf)?;
         stream.write_all(&self.write_buf[..len])?;
+        *self.read_cursor = 0;
 
-        // read the response from the server and check it to complete the opening handshake
-        let received_size = stream.read(&mut self.read_buf)?;
-        self.websocket
-            .client_accept(&web_socket_key, &self.read_buf[..received_size])?;
+        loop {
+            // read the response from the server and check it to complete the opening handshake
+            let received_size = stream.read(&mut self.read_buf[*self.read_cursor..])?;
+
+            match self.websocket.client_accept(
+                &web_socket_key,
+                &self.read_buf[..*self.read_cursor + received_size],
+            ) {
+                Ok((len, sub_protocol)) => {
+                    // "consume" the HTTP header that we have read from the stream
+                    // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
+                    *self.read_cursor += received_size - len;
+                    return Ok(sub_protocol);
+                }
+                Err(crate::Error::HttpHeaderIncomplete) => {
+                    *self.read_cursor += received_size;
+                    // continue reading HTTP header in loop
+                }
+                Err(e) => {
+                    *self.read_cursor += received_size;
+                    return Err(FramerError::WebSocket(e));
+                }
+            }
+        }
+    }
+}
+
+impl<'a, TRng> Framer<'a, TRng, crate::Server>
+where
+    TRng: RngCore,
+{
+    pub fn accept<TStream>(
+        &mut self,
+        stream: &mut TStream,
+        websocket_context: &WebSocketContext,
+    ) -> Result<(), FramerError>
+    where
+        TStream: Write,
+    {
+        let len = self.websocket.server_accept(
+            &websocket_context.sec_websocket_key,
+            None,
+            &mut self.write_buf,
+        )?;
+
+        stream.write_all(&self.write_buf[..len])?;
         Ok(())
     }
 }
@@ -108,13 +160,14 @@ where
     // than the frame buffer but use whatever is is appropriate for your stream
     pub fn new(
         read_buf: &'a mut [u8],
+        read_cursor: &'a mut usize,
         write_buf: &'a mut [u8],
         websocket: &'a mut WebSocket<TRng, TWebSocketType>,
     ) -> Self {
         Self {
             read_buf,
             write_buf,
-            read_cursor: 0,
+            read_cursor,
             frame_cursor: 0,
             read_len: 0,
             websocket,
@@ -195,9 +248,9 @@ where
         TStream: Read + Write,
     {
         loop {
-            if self.read_cursor == 0 || self.read_cursor == self.read_len {
+            if *self.read_cursor == 0 || *self.read_cursor == self.read_len {
                 self.read_len = stream.read(self.read_buf)?;
-                self.read_cursor = 0;
+                *self.read_cursor = 0;
             }
 
             if self.read_len == 0 {
@@ -205,7 +258,7 @@ where
             }
 
             loop {
-                if self.read_cursor == self.read_len {
+                if *self.read_cursor == self.read_len {
                     break;
                 }
 
@@ -214,11 +267,11 @@ where
                 }
 
                 let ws_result = self.websocket.read(
-                    &self.read_buf[self.read_cursor..self.read_len],
+                    &self.read_buf[*self.read_cursor..self.read_len],
                     &mut frame_buf[self.frame_cursor..],
                 )?;
 
-                self.read_cursor += ws_result.len_from;
+                *self.read_cursor += ws_result.len_from;
 
                 match ws_result.message_type {
                     // text or binary frame

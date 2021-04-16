@@ -2,18 +2,6 @@ use super::*;
 use heapless::{String, Vec};
 
 // NOTE: this struct is re-exported
-/// An http header struct that exposes websocket details
-pub struct HttpHeader {
-    /// The request uri (e.g. `/chat?id=123`) of the GET method used to identify the endpoint of
-    /// the connection. This allows multiple domains to be served by a single server.
-    /// This could also be used to send identifiable information about the client
-    pub path: String<U128>,
-    /// If the http header was a valid upgrade request then this could contain the websocket
-    /// detail relating to it
-    pub websocket_context: Option<WebSocketContext>,
-}
-
-// NOTE: this struct is re-exported
 /// Websocket details extracted from the http header
 pub struct WebSocketContext {
     /// The list of sub protocols is restricted to a maximum of 3
@@ -23,7 +11,7 @@ pub struct WebSocketContext {
 }
 
 // NOTE: this function is re-exported
-/// Reads a buffer and extracts the HttpHeader information from it, including websocket specific information.
+/// Reads an http header and extracts websocket specific information from it.
 ///
 /// # Examples
 /// ```
@@ -39,124 +27,101 @@ pub struct WebSocketContext {
 ///
 /// ";
 ///
-/// let http_header = ws::read_http_header(&client_request.as_bytes()).unwrap();
-/// let ws_context = http_header.websocket_context.unwrap();
+/// let mut headers = [httparse::EMPTY_HEADER; 16];
+/// let mut request = httparse::Request::new(&mut headers);
+/// request.parse(client_request.as_bytes()).unwrap();
+/// let headers = request.headers.iter().map(|f| (f.name, f.value));
+/// let ws_context = ws::read_http_header(headers).unwrap().unwrap();
 /// assert_eq!("Z7OY1UwHOx/nkSz38kfPwg==", ws_context.sec_websocket_key);
 /// assert_eq!("chat", ws_context.sec_websocket_protocol_list.get(0).unwrap().as_str());
 /// assert_eq!("advancedchat", ws_context.sec_websocket_protocol_list.get(1).unwrap().as_str());
 ///
 /// ```
-/// # Errors
-/// * Will return `HttpHeaderNoPath` if no path is specified in the http header (e.g. /chat). This
-/// is the most likely error message to receive if the input buffer does not contain any part of a
-/// valid http header at all.
-/// * Will return `HttpHeaderIncomplete` if the input buffer does not contain a complete http header.
-/// Http headers must end with `\r\n\r\n` to be valid. Therefore, since http headers are not framed,
-/// (i.e. not length prefixed) the idea is to read from a network stream in a loop until you no
-/// longer receive a `HttpHeaderIncomplete` error code and that is when you know that the entire
-/// header has been read
-pub fn read_http_header(buffer: &[u8]) -> Result<HttpHeader> {
-    let mut headers = [httparse::EMPTY_HEADER; 16];
-    let mut req = httparse::Request::new(&mut headers);
-    if req.parse(&buffer)?.is_complete() {
-        let path = match req.path {
-            Some(path) => String::from(path),
-            None => return Err(Error::HttpHeaderNoPath),
-        };
-        let mut sec_websocket_protocol_list: Vec<String<U24>, U3> = Vec::new();
-        let mut is_websocket_request = false;
-        let mut sec_websocket_key = String::new();
+pub fn read_http_header<'a>(
+    headers: impl Iterator<Item = (&'a str, &'a [u8])>,
+) -> Result<Option<WebSocketContext>> {
+    let mut sec_websocket_protocol_list: Vec<String<U24>, U3> = Vec::new();
+    let mut is_websocket_request = false;
+    let mut sec_websocket_key = String::new();
 
-        for item in req.headers.iter() {
-            match item.name {
-                "Upgrade" => is_websocket_request = str::from_utf8(item.value)? == "websocket",
-                "Sec-WebSocket-Protocol" => {
-                    // extract a csv list of supported sub protocols
-                    for item in str::from_utf8(item.value)?.split(", ") {
-                        if sec_websocket_protocol_list.len()
-                            < sec_websocket_protocol_list.capacity()
-                        {
-                            // it is safe to unwrap here because we have checked
-                            // the size of the list beforehand
-                            sec_websocket_protocol_list
-                                .push(String::from(item))
-                                .unwrap();
-                        }
+    for (name, value) in headers {
+        match name {
+            "Upgrade" => is_websocket_request = str::from_utf8(value)? == "websocket",
+            "Sec-WebSocket-Protocol" => {
+                // extract a csv list of supported sub protocols
+                for item in str::from_utf8(value)?.split(", ") {
+                    if sec_websocket_protocol_list.len() < sec_websocket_protocol_list.capacity() {
+                        // it is safe to unwrap here because we have checked
+                        // the size of the list beforehand
+                        sec_websocket_protocol_list
+                            .push(String::from(item))
+                            .unwrap();
                     }
                 }
-                "Sec-WebSocket-Key" => {
-                    sec_websocket_key = String::from(str::from_utf8(item.value)?);
-                }
-                &_ => {
-                    // ignore all other headers
-                }
+            }
+            "Sec-WebSocket-Key" => {
+                sec_websocket_key = String::from(str::from_utf8(value)?);
+            }
+            &_ => {
+                // ignore all other headers
             }
         }
+    }
 
-        let websocket_context = {
-            if is_websocket_request {
-                Some(WebSocketContext {
-                    sec_websocket_protocol_list,
-                    sec_websocket_key,
-                })
-            } else {
-                None
-            }
-        };
-
-        let header = HttpHeader {
-            path,
-            websocket_context,
-        };
-
-        Ok(header)
+    if is_websocket_request {
+        Ok(Some(WebSocketContext {
+            sec_websocket_protocol_list,
+            sec_websocket_key,
+        }))
     } else {
-        Err(Error::HttpHeaderIncomplete)
+        Ok(None)
     }
 }
 
 pub fn read_server_connect_handshake_response(
     sec_websocket_key: &WebSocketKey,
     from: &[u8],
-) -> Result<Option<WebSocketSubProtocol>> {
+) -> Result<(usize, Option<WebSocketSubProtocol>)> {
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut response = httparse::Response::new(&mut headers);
-    if response.parse(&from)?.is_complete() {
-        match response.code {
-            Some(101) => {
-                // we are ok
-            }
-            code => {
-                return Err(Error::HttpResponseCodeInvalid(code));
-            }
-        };
 
-        let mut sec_websocket_protocol: Option<WebSocketSubProtocol> = None;
-        for item in response.headers.iter() {
-            match item.name {
-                "Sec-WebSocket-Accept" => {
-                    let mut output = [0; 28];
-                    build_accept_string(&sec_websocket_key, &mut output)?;
+    match response.parse(&from)? {
+        httparse::Status::Complete(len) => {
+            match response.code {
+                Some(101) => {
+                    // we are ok
+                }
+                code => {
+                    return Err(Error::HttpResponseCodeInvalid(code));
+                }
+            };
 
-                    let expected_accept_string = str::from_utf8(&output)?;
-                    let actual_accept_string = str::from_utf8(item.value)?;
+            let mut sec_websocket_protocol: Option<WebSocketSubProtocol> = None;
+            for item in response.headers.iter() {
+                match item.name {
+                    "Sec-WebSocket-Accept" => {
+                        let mut output = [0; 28];
+                        build_accept_string(&sec_websocket_key, &mut output)?;
 
-                    if actual_accept_string != expected_accept_string {
-                        return Err(Error::AcceptStringInvalid);
+                        let expected_accept_string = str::from_utf8(&output)?;
+                        let actual_accept_string = str::from_utf8(item.value)?;
+
+                        if actual_accept_string != expected_accept_string {
+                            return Err(Error::AcceptStringInvalid);
+                        }
+                    }
+                    "Sec-WebSocket-Protocol" => {
+                        sec_websocket_protocol = Some(String::from(str::from_utf8(item.value)?));
+                    }
+                    _ => {
+                        // ignore all other headers
                     }
                 }
-                "Sec-WebSocket-Protocol" => {
-                    sec_websocket_protocol = Some(String::from(str::from_utf8(item.value)?));
-                }
-                _ => {
-                    // ignore all other headers
-                }
             }
-        }
 
-        Ok(sec_websocket_protocol)
-    } else {
-        Err(Error::HttpHeaderIncomplete)
+            Ok((len, sec_websocket_protocol))
+        }
+        httparse::Status::Partial => Err(Error::HttpHeaderIncomplete),
     }
 }
 
