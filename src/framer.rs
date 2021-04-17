@@ -12,7 +12,6 @@ use crate::{
 };
 use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
-use std::usize;
 
 #[cfg(feature = "std")]
 use std::io::{Read, Write};
