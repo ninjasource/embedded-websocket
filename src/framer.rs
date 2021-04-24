@@ -13,31 +13,33 @@ use crate::{
 use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
 
-#[cfg(feature = "std")]
-use std::io::{Read, Write};
+//#[cfg(feature = "std")]
+//use std::io::{Read, Write};
 
-#[cfg(feature = "std")]
-use std::io::Error as IoError;
+//#[cfg(feature = "std")]
+//use std::io::Error as IoError;
 
+/*
 #[cfg(not(feature = "std"))]
 #[derive(Debug)]
-pub enum IoError {
+pub enum Error<E> {
     Read,
     Write,
 }
+*/
 
-#[cfg(not(feature = "std"))]
-pub trait Read {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, IoError>;
-}
+//#[cfg(not(feature = "std"))]
+//pub trait Read<E> {
+//    fn read(&mut self, buf: &mut [u8]) -> Result<usize, E>;
+//}
 
-#[cfg(not(feature = "std"))]
-pub trait Write {
-    fn write_all(&mut self, buf: &[u8]) -> Result<(), IoError>;
-}
+//#[cfg(not(feature = "std"))]
+//pub trait Write<E> {
+//    fn write_all(&mut self, buf: &[u8]) -> Result<(), E>;
+//}
 
 #[derive(Debug)]
-pub enum FramerError {
+pub enum FramerError<IoError> {
     Io(IoError),
     FrameTooLarge(usize),
     Utf8(Utf8Error),

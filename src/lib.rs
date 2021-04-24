@@ -10,7 +10,8 @@
 //! TcpStream from the standard library.
 
 // support for websockets without using the standard library
-#![cfg_attr(not(feature = "std"), no_std)]
+//#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 #![deny(warnings)]
 
 use byteorder::{BigEndian, ByteOrder};
