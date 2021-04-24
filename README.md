@@ -11,6 +11,13 @@ embedded-websocket = { version = "x.x.x", default-features = false }
 ```
 The optional (but recommended) [framer](./src/lib.rs) module allows you to ergonomically work with full websocket frames without having to deal with the complexities of fragmented data. If you use it you will have to implement the Read and Write traits in that module because they are not available in `no_std`. 
 
+NOTE: If you get an error message like the following it means that you have not used `default-features = false` when declaring the dependency in your Cargo.toml file:
+```
+error[E0463]: can't find crate for `std`
+  |
+  = note: the `thumbv7m-none-eabi` target may not be installed
+```
+
 ## Running the examples
 
 The example below runs a websocket server that accepts client connections in a loop and returns back whatever text client sends. The client connects to the server, sends one "Hello, World!" message, waits for a response from the server then disconnects and terminates. Proper open and close handshakes are demonstrated.
@@ -38,14 +45,14 @@ The following example also found [here](./examples/client.rs) initiates a openin
 // open a TCP stream to localhost port 1337
 let address = "127.0.0.1:1337";
 println!("Connecting to: {}", address);
-let mut stream = TcpStream::connect(address)?;
+let mut stream = TcpStream::connect(address).map_err(FramerError::Io)?;
 println!("Connected.");
 
 let mut read_buf = [0; 4000];
 let mut read_cursor = 0;
 let mut write_buf = [0; 4000];
 let mut frame_buf = [0; 4000];
-let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+let mut websocket = WebSocketClient::new_client(rand::thread_rng());
 
 // initiate a websocket opening handshake
 let websocket_options = WebSocketOptions {
@@ -56,27 +63,27 @@ let websocket_options = WebSocketOptions {
     additional_headers: None,
 };
 
-let mut websocket = Framer::new(
+let mut framer = Framer::new(
     &mut read_buf,
     &mut read_cursor,
     &mut write_buf,
-    &mut ws_client,
+    &mut websocket,
 );
-websocket.connect(&mut stream, &websocket_options)?;
+framer.connect(&mut stream, &websocket_options)?;
 
 let message = "Hello, World!";
-websocket.write(
+framer.write(
     &mut stream,
     WebSocketSendMessageType::Text,
     true,
     message.as_bytes(),
 )?;
 
-while let Some(s) = websocket.read_text(&mut stream, &mut frame_buf)? {
+while let Some(s) = framer.read_text(&mut stream, &mut frame_buf)? {
     println!("Received: {}", s);
 
     // close the websocket after receiving the first reply
-    websocket.close(&mut stream, WebSocketCloseStatusCode::NormalClosure, None)?;
+    framer.close(&mut stream, WebSocketCloseStatusCode::NormalClosure, None)?;
     println!("Sent close handshake");
 }
 

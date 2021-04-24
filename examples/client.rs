@@ -13,20 +13,20 @@ use embedded_websocket::{
     framer::{Framer, FramerError},
     WebSocketClient, WebSocketCloseStatusCode, WebSocketOptions, WebSocketSendMessageType,
 };
-use std::net::TcpStream;
+use std::{error::Error, net::TcpStream};
 
-fn main() -> Result<(), FramerError> {
+fn main() -> Result<(), FramerError<impl Error>> {
     // open a TCP stream to localhost port 1337
     let address = "127.0.0.1:1337";
     println!("Connecting to: {}", address);
-    let mut stream = TcpStream::connect(address)?;
+    let mut stream = TcpStream::connect(address).map_err(FramerError::Io)?;
     println!("Connected.");
 
     let mut read_buf = [0; 4000];
     let mut read_cursor = 0;
     let mut write_buf = [0; 4000];
     let mut frame_buf = [0; 4000];
-    let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+    let mut websocket = WebSocketClient::new_client(rand::thread_rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
@@ -37,27 +37,27 @@ fn main() -> Result<(), FramerError> {
         additional_headers: None,
     };
 
-    let mut websocket = Framer::new(
+    let mut framer = Framer::new(
         &mut read_buf,
         &mut read_cursor,
         &mut write_buf,
-        &mut ws_client,
+        &mut websocket,
     );
-    websocket.connect(&mut stream, &websocket_options)?;
+    framer.connect(&mut stream, &websocket_options)?;
 
     let message = "Hello, World!";
-    websocket.write(
+    framer.write(
         &mut stream,
         WebSocketSendMessageType::Text,
         true,
         message.as_bytes(),
     )?;
 
-    while let Some(s) = websocket.read_text(&mut stream, &mut frame_buf)? {
+    while let Some(s) = framer.read_text(&mut stream, &mut frame_buf)? {
         println!("Received: {}", s);
 
         // close the websocket after receiving the first reply
-        websocket.close(&mut stream, WebSocketCloseStatusCode::NormalClosure, None)?;
+        framer.close(&mut stream, WebSocketCloseStatusCode::NormalClosure, None)?;
         println!("Sent close handshake");
     }
 

@@ -26,7 +26,7 @@ type Result<T> = std::result::Result<T, WebServerError>;
 #[derive(Debug)]
 pub enum WebServerError {
     Io(std::io::Error),
-    Framer(FramerError),
+    Framer(FramerError<std::io::Error>),
     WebSocket(ws::Error),
     Utf8Error,
 }
@@ -37,8 +37,8 @@ impl From<std::io::Error> for WebServerError {
     }
 }
 
-impl From<FramerError> for WebServerError {
-    fn from(err: FramerError) -> WebServerError {
+impl From<FramerError<std::io::Error>> for WebServerError {
+    fn from(err: FramerError<std::io::Error>) -> WebServerError {
         WebServerError::Framer(err)
     }
 }
@@ -85,12 +85,12 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
         // this is a websocket upgrade HTTP request
         let mut write_buf = [0; 4000];
         let mut frame_buf = [0; 4000];
-        let mut web_socket = WebSocketServer::new_server();
+        let mut websocket = WebSocketServer::new_server();
         let mut framer = Framer::new(
             &mut read_buf,
             &mut read_cursor,
             &mut write_buf,
-            &mut web_socket,
+            &mut websocket,
         );
 
         // complete the opening handshake with the client
