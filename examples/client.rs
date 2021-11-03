@@ -10,7 +10,7 @@
 // but the websocket library remains no_std (see client_full for an example without the framer helper module)
 
 use embedded_websocket::{
-    framer::{Framer, FramerError},
+    framer::{Framer, FramerError, ReadResult},
     WebSocketClient, WebSocketCloseStatusCode, WebSocketOptions, WebSocketSendMessageType,
 };
 use std::{error::Error, net::TcpStream};
@@ -53,7 +53,7 @@ fn main() -> Result<(), FramerError<impl Error>> {
         message.as_bytes(),
     )?;
 
-    while let Some(s) = framer.read_text(&mut stream, &mut frame_buf)? {
+    while let ReadResult::Text(s) = framer.read(&mut stream, &mut frame_buf)? {
         println!("Received: {}", s);
 
         // close the websocket after receiving the first reply

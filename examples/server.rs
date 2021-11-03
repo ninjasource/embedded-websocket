@@ -16,6 +16,7 @@ use std::{
     io::{Read, Write},
     usize,
 };
+use ws::framer::ReadResult;
 use ws::{
     framer::{Framer, FramerError},
     WebSocketContext, WebSocketSendMessageType, WebSocketServer,
@@ -98,7 +99,7 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
         println!("Websocket connection opened");
 
         // read websocket frames
-        while let Some(text) = framer.read_text(&mut stream, &mut frame_buf)? {
+        while let ReadResult::Text(text) = framer.read(&mut stream, &mut frame_buf)? {
             println!("Received: {}", text);
 
             // send the text back to the client

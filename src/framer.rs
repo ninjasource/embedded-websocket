@@ -31,6 +31,13 @@ pub trait Stream<E> {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), E>;
 }
 
+pub enum ReadResult<'a> {
+    Binary(&'a [u8]),
+    Text(&'a str),
+    Pong(&'a [u8]),
+    Closed,
+}
+
 #[derive(Debug)]
 pub enum FramerError<E> {
     Io(E),
@@ -64,7 +71,7 @@ where
     ) -> Result<Option<WebSocketSubProtocol>, FramerError<E>> {
         let (len, web_socket_key) = self
             .websocket
-            .client_connect(&websocket_options, &mut self.write_buf)
+            .client_connect(websocket_options, &mut self.write_buf)
             .map_err(FramerError::WebSocket)?;
         stream
             .write_all(&self.write_buf[..len])
@@ -189,37 +196,11 @@ where
     // frame_buf should be large enough to hold an entire websocket text frame
     // this function will block until it has recieved a full websocket frame.
     // It will wait until the last fragmented frame has arrived.
-    pub fn read_text<'b, E>(
+    pub fn read<'b, E>(
         &mut self,
         stream: &mut impl Stream<E>,
         frame_buf: &'b mut [u8],
-    ) -> Result<Option<&'b str>, FramerError<E>> {
-        if let Some(frame) = self.next(stream, frame_buf, WebSocketReceiveMessageType::Text)? {
-            Ok(Some(
-                core::str::from_utf8(frame).map_err(FramerError::Utf8)?,
-            ))
-        } else {
-            Ok(None)
-        }
-    }
-
-    // frame_buf should be large enough to hold an entire websocket binary frame
-    // this function will block until it has recieved a full websocket frame.
-    // It will wait until the last fragmented frame has arrived.
-    pub fn read_binary<'b, E>(
-        &mut self,
-        stream: &mut impl Stream<E>,
-        frame_buf: &'b mut [u8],
-    ) -> Result<Option<&'b [u8]>, FramerError<E>> {
-        self.next(stream, frame_buf, WebSocketReceiveMessageType::Binary)
-    }
-
-    fn next<'b, E>(
-        &mut self,
-        stream: &mut impl Stream<E>,
-        frame_buf: &'b mut [u8],
-        message_type: WebSocketReceiveMessageType,
-    ) -> Result<Option<&'b [u8]>, FramerError<E>> {
+    ) -> Result<ReadResult<'b>, FramerError<E>> {
         loop {
             if *self.read_cursor == 0 || *self.read_cursor == self.read_len {
                 self.read_len = stream.read(self.read_buf).map_err(FramerError::Io)?;
@@ -227,7 +208,7 @@ where
             }
 
             if self.read_len == 0 {
-                return Ok(None);
+                return Ok(ReadResult::Closed);
             }
 
             loop {
@@ -250,13 +231,21 @@ where
                 *self.read_cursor += ws_result.len_from;
 
                 match ws_result.message_type {
-                    // text or binary frame
-                    x if x == message_type => {
+                    WebSocketReceiveMessageType::Binary => {
                         self.frame_cursor += ws_result.len_to;
                         if ws_result.end_of_message {
                             let frame = &frame_buf[..self.frame_cursor];
                             self.frame_cursor = 0;
-                            return Ok(Some(frame));
+                            return Ok(ReadResult::Binary(frame));
+                        }
+                    }
+                    WebSocketReceiveMessageType::Text => {
+                        self.frame_cursor += ws_result.len_to;
+                        if ws_result.end_of_message {
+                            let frame = &frame_buf[..self.frame_cursor];
+                            self.frame_cursor = 0;
+                            let text = core::str::from_utf8(frame).map_err(FramerError::Utf8)?;
+                            return Ok(ReadResult::Text(text));
                         }
                     }
                     WebSocketReceiveMessageType::CloseMustReply => {
@@ -266,9 +255,9 @@ where
                             ws_result.len_to,
                             WebSocketSendMessageType::CloseReply,
                         )?;
-                        return Ok(None);
+                        return Ok(ReadResult::Closed);
                     }
-                    WebSocketReceiveMessageType::CloseCompleted => return Ok(None),
+                    WebSocketReceiveMessageType::CloseCompleted => return Ok(ReadResult::Closed),
                     WebSocketReceiveMessageType::Ping => {
                         self.send_back(
                             stream,
@@ -277,8 +266,11 @@ where
                             WebSocketSendMessageType::Pong,
                         )?;
                     }
-                    // ignore other message types
-                    _ => {}
+                    WebSocketReceiveMessageType::Pong => {
+                        let bytes =
+                            &frame_buf[self.frame_cursor..self.frame_cursor + ws_result.len_to];
+                        return Ok(ReadResult::Pong(bytes));
+                    }
                 }
             }
         }

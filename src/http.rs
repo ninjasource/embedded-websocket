@@ -85,7 +85,7 @@ pub fn read_server_connect_handshake_response(
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut response = httparse::Response::new(&mut headers);
 
-    match response.parse(&from)? {
+    match response.parse(from)? {
         httparse::Status::Complete(len) => {
             match response.code {
                 Some(101) => {
@@ -101,7 +101,7 @@ pub fn read_server_connect_handshake_response(
                 match item.name {
                     "Sec-WebSocket-Accept" => {
                         let mut output = [0; 28];
-                        build_accept_string(&sec_websocket_key, &mut output)?;
+                        build_accept_string(sec_websocket_key, &mut output)?;
 
                         let expected_accept_string = str::from_utf8(&output)?;
                         let actual_accept_string = str::from_utf8(item.value)?;
