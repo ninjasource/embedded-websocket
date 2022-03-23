@@ -835,7 +835,7 @@ fn min(num1: usize, num2: usize, num3: usize) -> usize {
 }
 
 fn read_into_buffer(
-    mask_key: Option<[u8; 4]>,
+    mask_key: &mut Option<[u8; 4]>,
     from_buffer: &[u8],
     to_buffer: &mut [u8],
     len: usize,
@@ -849,6 +849,7 @@ fn read_into_buffer(
             for (i, (from, to)) in from_buffer[..len_to_read].iter().zip(to_buffer).enumerate() {
                 *to = *from ^ mask_key[i % MASK_KEY_LEN];
             }
+            mask_key.rotate_left(len_to_read % MASK_KEY_LEN);
         }
         None => {
             to_buffer[..len_to_read].copy_from_slice(&from_buffer[..len_to_read]);
@@ -864,7 +865,7 @@ fn read_continuation(
     to_buffer: &mut [u8],
 ) -> WebSocketFrame {
     let len_read = read_into_buffer(
-        continuation_read.mask_key,
+        &mut continuation_read.mask_key,
         from_buffer,
         to_buffer,
         continuation_read.count,
@@ -917,7 +918,7 @@ fn read_frame(
     let from_buffer = &from_buffer[num_bytes_read..];
 
     // reads the mask key from the payload if the is_mask_bit_set flag is set
-    let mask_key = if is_mask_bit_set {
+    let mut mask_key = if is_mask_bit_set {
         if from_buffer.len() < MASK_KEY_LEN {
             return Err(Error::ReadFrameIncomplete);
         }
@@ -932,9 +933,9 @@ fn read_frame(
     let len_read = if is_mask_bit_set {
         // start after the mask key
         let from_buffer = &from_buffer[MASK_KEY_LEN..];
-        read_into_buffer(mask_key, from_buffer, to_buffer, len)
+        read_into_buffer(&mut mask_key, from_buffer, to_buffer, len)
     } else {
-        read_into_buffer(mask_key, from_buffer, to_buffer, len)
+        read_into_buffer(&mut mask_key, from_buffer, to_buffer, len)
     };
 
     let has_continuation = len_read < len;
