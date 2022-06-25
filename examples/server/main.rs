@@ -3,23 +3,23 @@
 
 // Demo websocket server that listens on localhost port 1337.
 // If accessed from a browser it will return a web page that will automatically attempt to
-// open a websocket connection to itself. Alternatively, the client.rs example can be used to
+// open a websocket connection to itself. Alternatively, the main example can be used to
 // open a websocket connection directly. The server will echo all Text and Ping messages back to
 // the client as well as responding to any opening and closing handshakes.
 // Note that we are using the standard library in the demo but the websocket library remains no_std
 
 use embedded_websocket as ws;
+use httparse::Request;
+use once_cell::sync::Lazy;
+use route_recognizer::Router;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::str::Utf8Error;
 use std::thread;
-use std::{
-    io::{Read, Write},
-    usize,
-};
 use ws::framer::ReadResult;
 use ws::{
     framer::{Framer, FramerError},
-    WebSocketContext, WebSocketSendMessageType, WebSocketServer,
+    WebSocketSendMessageType, WebSocketServer,
 };
 
 type Result<T> = std::result::Result<T, WebServerError>;
@@ -27,8 +27,9 @@ type Result<T> = std::result::Result<T, WebServerError>;
 #[derive(Debug)]
 pub enum WebServerError {
     Io(std::io::Error),
-    Framer(FramerError<std::io::Error>),
+    Framer(FramerError),
     WebSocket(ws::Error),
+    HttpError(String),
     Utf8Error,
 }
 
@@ -38,8 +39,8 @@ impl From<std::io::Error> for WebServerError {
     }
 }
 
-impl From<FramerError<std::io::Error>> for WebServerError {
-    fn from(err: FramerError<std::io::Error>) -> WebServerError {
+impl From<FramerError> for WebServerError {
+    fn from(err: FramerError) -> WebServerError {
         WebServerError::Framer(err)
     }
 }
@@ -77,13 +78,24 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn handle_client(mut stream: TcpStream) -> Result<()> {
-    println!("Client connected {}", stream.peer_addr()?);
-    let mut read_buf = [0; 4000];
-    let mut read_cursor = 0;
+type Handler = Box<dyn Fn(&mut TcpStream, &Request) -> Result<()> + Send + Sync>;
 
-    if let Some(websocket_context) = read_header(&mut stream, &mut read_buf, &mut read_cursor)? {
+static ROUTER: Lazy<Router<Handler>> = Lazy::new(|| {
+    let mut router = Router::new();
+    router.add("/chat", Box::new(handle_chat) as Handler);
+    router.add("/", Box::new(handle_root) as Handler);
+    router
+});
+
+fn handle_chat(stream: &mut TcpStream, req: &Request) -> Result<()> {
+    println!("Received chat request: {:?}", req.path);
+
+    if let Some(websocket_context) =
+        ws::read_http_header(req.headers.iter().map(|f| (f.name, f.value)))?
+    {
         // this is a websocket upgrade HTTP request
+        let mut read_buf = [0; 4000];
+        let mut read_cursor = 0;
         let mut write_buf = [0; 4000];
         let mut frame_buf = [0; 4000];
         let mut websocket = WebSocketServer::new_server();
@@ -95,85 +107,65 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
         );
 
         // complete the opening handshake with the client
-        framer.accept(&mut stream, &websocket_context)?;
+        framer.accept(stream, &websocket_context)?;
         println!("Websocket connection opened");
 
         // read websocket frames
-        while let ReadResult::Text(text) = framer.read(&mut stream, &mut frame_buf)? {
+        while let ReadResult::Text(text) = framer.read(stream, &mut frame_buf)? {
             println!("Received: {}", text);
 
             // send the text back to the client
             framer.write(
-                &mut stream,
+                stream,
                 WebSocketSendMessageType::Text,
                 true,
-                text.as_bytes(),
+                format!("hello {}", text).as_bytes(),
             )?
         }
 
         println!("Closing websocket connection");
-        Ok(())
-    } else {
-        Ok(())
     }
+
+    Ok(())
 }
 
-fn read_header(
-    stream: &mut TcpStream,
-    read_buf: &mut [u8],
-    read_cursor: &mut usize,
-) -> Result<Option<WebSocketContext>> {
-    loop {
-        let mut headers = [httparse::EMPTY_HEADER; 16];
-        let mut request = httparse::Request::new(&mut headers);
+fn handle_root(stream: &mut TcpStream, _req: &Request) -> Result<()> {
+    stream.write_all(&ROOT_HTML.as_bytes())?;
+    Ok(())
+}
 
-        let received_size = stream.read(&mut read_buf[*read_cursor..])?;
+fn handle_client(mut stream: TcpStream) -> Result<()> {
+    println!("Client connected {}", stream.peer_addr()?);
+    let mut read_buf = [0; 4000];
+    let mut read_cursor = 0;
 
-        match request
-            .parse(&read_buf[..*read_cursor + received_size])
-            .unwrap()
-        {
-            httparse::Status::Complete(len) => {
-                // if we read exactly the right amount of bytes for the HTTP header then read_cursor would be 0
-                *read_cursor += received_size - len;
-                let headers = request.headers.iter().map(|f| (f.name, f.value));
-                match ws::read_http_header(headers)? {
-                    Some(websocket_context) => match request.path {
-                        Some("/chat") => {
-                            return Ok(Some(websocket_context));
-                        }
-                        _ => return_404_not_found(stream, request.path)?,
-                    },
-                    None => {
-                        handle_non_websocket_http_request(stream, request.path)?;
-                    }
-                }
-                return Ok(None);
+    let mut headers = vec![httparse::EMPTY_HEADER; 8];
+    let received_size = stream.read(&mut read_buf[read_cursor..])?;
+    let request = loop {
+        let mut request = Request::new(&mut headers);
+        match request.parse(&read_buf[..read_cursor + received_size]) {
+            Ok(httparse::Status::Partial) => read_cursor += received_size,
+            Ok(httparse::Status::Complete(_)) => break request,
+            Err(httparse::Error::TooManyHeaders) => {
+                headers.resize(headers.len() * 2, httparse::EMPTY_HEADER)
             }
-            // keep reading while the HTTP header is incomplete
-            httparse::Status::Partial => *read_cursor += received_size,
-        }
-    }
-}
-
-fn handle_non_websocket_http_request(stream: &mut TcpStream, path: Option<&str>) -> Result<()> {
-    println!("Received file request: {:?}", path);
-
-    match path {
-        Some("/") => stream.write_all(&ROOT_HTML.as_bytes())?,
-        unknown_path => {
-            return_404_not_found(stream, unknown_path)?;
+            _ => panic!("http parser error"),
         }
     };
 
-    Ok(())
-}
-
-fn return_404_not_found(stream: &mut TcpStream, unknown_path: Option<&str>) -> Result<()> {
-    println!("Unknown path: {:?}", unknown_path);
-    let html = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    stream.write_all(&html.as_bytes())?;
-    Ok(())
+    match ROUTER.recognize(request.path.unwrap_or("/")) {
+        Ok(handler) => handler.handler()(&mut stream, &request),
+        Err(e) => {
+            println!("Unknown path: {:?}", request.path);
+            let html = format!(
+                "HTTP/1.1 404 Not Found\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{msg}",
+                len = e.len(),
+                msg = e
+            );
+            stream.write_all(&html.as_bytes())?;
+            Err(WebServerError::HttpError(e))
+        }
+    }
 }
 
 const ROOT_HTML : &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 2590\r\nConnection: close\r\n\r\n<!doctype html>

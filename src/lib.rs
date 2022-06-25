@@ -17,7 +17,7 @@ use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};
 use heapless::{String, Vec};
 use rand_core::RngCore;
-use sha1::{Sha1, Digest};
+use sha1::{Digest, Sha1};
 
 mod http;
 pub mod random;
