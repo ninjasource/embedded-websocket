@@ -5,7 +5,7 @@ use heapless::{String, Vec};
 /// Websocket details extracted from the http header
 pub struct WebSocketContext {
     /// The list of sub protocols is restricted to a maximum of 3
-    pub sec_websocket_protocol_list: Vec<WebSocketSubProtocol, U3>,
+    pub sec_websocket_protocol_list: Vec<WebSocketSubProtocol, 3>,
     /// The websocket key user to build the accept string to complete the opening handshake
     pub sec_websocket_key: WebSocketKey,
 }
@@ -40,7 +40,7 @@ pub struct WebSocketContext {
 pub fn read_http_header<'a>(
     headers: impl Iterator<Item = (&'a str, &'a [u8])>,
 ) -> Result<Option<WebSocketContext>> {
-    let mut sec_websocket_protocol_list: Vec<String<U24>, U3> = Vec::new();
+    let mut sec_websocket_protocol_list: Vec<String<24>, 3> = Vec::new();
     let mut is_websocket_request = false;
     let mut sec_websocket_key = String::new();
 
@@ -130,13 +130,13 @@ pub fn build_connect_handshake_request(
     rng: &mut impl RngCore,
     to: &mut [u8],
 ) -> Result<(usize, WebSocketKey)> {
-    let mut http_request: String<U1024> = String::new();
+    let mut http_request: String<1024> = String::new();
     let mut key_as_base64: [u8; 24] = [0; 24];
 
     let mut key: [u8; 16] = [0; 16];
     rng.fill_bytes(&mut key);
-    base64::encode(&key, &mut key_as_base64);
-    let sec_websocket_key: String<U24> = String::from(str::from_utf8(&key_as_base64)?);
+    base64::encode_config_slice(&key, base64::STANDARD, &mut key_as_base64);
+    let sec_websocket_key: String<24> = String::from(str::from_utf8(&key_as_base64)?);
 
     http_request.push_str("GET ")?;
     http_request.push_str(websocket_options.path)?;
@@ -177,7 +177,7 @@ pub fn build_connect_handshake_response(
     sec_websocket_protocol: Option<&WebSocketSubProtocol>,
     to: &mut [u8],
 ) -> Result<usize> {
-    let mut http_response: String<U1024> = String::new();
+    let mut http_response: String<1024> = String::new();
     http_response.push_str(
         "HTTP/1.1 101 Switching Protocols\r\n\
          Connection: Upgrade\r\nUpgrade: websocket\r\n",
@@ -204,13 +204,14 @@ pub fn build_connect_handshake_response(
 
 pub fn build_accept_string(sec_websocket_key: &WebSocketKey, output: &mut [u8]) -> Result<()> {
     // concatenate the key with a known websocket GUID (as per the spec)
-    let mut accept_string: String<U64> = String::new();
+    let mut accept_string: String<64> = String::new();
     accept_string.push_str(sec_websocket_key)?;
     accept_string.push_str("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")?;
 
     // calculate the base64 encoded sha1 hash of the accept string above
-    let sha1 = Sha1::from(&accept_string);
-    let input = sha1.digest().bytes();
-    base64::encode(&input, output); // no need for slices since the output WILL be 28 bytes
+    let mut sha1 = Sha1::new();
+    sha1.update(&accept_string);
+    let input = sha1.finalize();
+    base64::encode_config_slice(&input, base64::STANDARD, output); // no need for slices since the output WILL be 28 bytes
     Ok(())
 }

@@ -15,12 +15,10 @@
 
 use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};
-use heapless::consts::{U1024, U24, U256, U3, U64};
 use heapless::{String, Vec};
 use rand_core::RngCore;
-use sha1::Sha1;
+use sha1::{Digest, Sha1};
 
-mod base64;
 mod http;
 pub mod random;
 pub use self::http::{read_http_header, WebSocketContext};
@@ -36,10 +34,10 @@ const MASK_KEY_LEN: usize = 4;
 pub type Result<T> = result::Result<T, Error>;
 
 /// A fixed length 24-character string used to hold a websocket key for the opening handshake
-pub type WebSocketKey = String<U24>;
+pub type WebSocketKey = String<24>;
 
 /// A maximum sized 24-character string used to store a sub protocol (e.g. `chat`)
-pub type WebSocketSubProtocol = String<U24>;
+pub type WebSocketSubProtocol = String<24>;
 
 /// Websocket send message type used when sending a websocket frame
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -680,7 +678,7 @@ where
         if self.state == WebSocketState::Open {
             self.state = WebSocketState::CloseSent;
             if let Some(status_description) = status_description {
-                let mut from_buffer: Vec<u8, U256> = Vec::new();
+                let mut from_buffer: Vec<u8, 256> = Vec::new();
                 BigEndian::write_u16(&mut from_buffer, close_status.to_u16());
 
                 // restrict the max size of the status_description
@@ -690,7 +688,7 @@ where
                     254
                 };
 
-                from_buffer.extend(status_description[..len].as_bytes());
+                from_buffer.extend_from_slice(status_description[..len].as_bytes())?;
                 self.write_frame(&from_buffer, to, WebSocketOpCode::ConnectionClose, true)
             } else {
                 let mut from_buffer: [u8; 2] = [0; 2];

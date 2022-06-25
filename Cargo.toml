@@ -11,14 +11,15 @@ categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
 [dependencies]
-sha1 = "0.6"
-heapless = "0.5"
-byteorder = { version = "1.4", default-features = false }
-httparse = { version = "1.4", default-features = false }
-rand_core = "0.6"
+sha1 = { version = "0.10.1", default-features = false }
+heapless = "0.7.14"
+byteorder = { version = "1.4.3", default-features = false }
+httparse = { version = "1.7.1", default-features = false }
+rand_core = "0.6.3"
+base64 = { version = "0.13.0", default-features = false }
 
 [dev-dependencies]
-rand = "0.8.3"
+rand = "0.8.5"
 
 # see readme for no_std support
 [features]
