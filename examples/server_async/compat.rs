@@ -4,16 +4,16 @@
 // As this is far from being any useful, please do extend this on your own
 pub trait CompatExt {
     fn compat(self) -> Compat<Self>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
     fn compat_ref(&self) -> Compat<&Self>;
     fn compat_mut(&mut self) -> Compat<&mut Self>;
 }
 
 impl<T> CompatExt for T {
     fn compat(self) -> Compat<Self>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         Compat(self)
     }
