@@ -145,7 +145,6 @@ pub fn build_connect_handshake_request(
         }
     }
 
-    
     let sec_websocket_key: String<24> = String::from(str::from_utf8(&key_as_base64)?);
 
     http_request.push_str("GET ")?;

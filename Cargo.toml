@@ -11,8 +11,8 @@ categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
 [dependencies]
-anyhow = "1.0.58"
 async-std = { version = "1.12.0", optional = true }
+async-trait = { version = "0.1.56", optional = true }
 base64 = { version = "0.13.0", default-features = false }
 base64-simd = { version = "0.5.0", default-features = false, optional = true }
 byteorder = { version = "1.4.3", default-features = false }
@@ -43,7 +43,7 @@ tokio-stream = { version = "0.1.9", features = ["net"] }
 default = ["std"]
 # default = []
 std = []
-async = ["std"]
+async = ["std", "async-trait"]
 tokio = ["dep:tokio", "async"]
 futures = ["dep:futures", "async"]
 smol = ["dep:smol", "async"]

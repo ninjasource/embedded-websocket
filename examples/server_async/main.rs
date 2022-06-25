@@ -47,7 +47,7 @@ cfg_if::cfg_if! {
 #[derive(Debug)]
 pub enum WebServerError {
     Io(std::io::Error),
-    Framer(FramerError),
+    Framer(FramerError<std::io::Error>),
     WebSocket(ws::Error),
     HttpError(String),
     Utf8Error,
@@ -59,8 +59,8 @@ impl From<std::io::Error> for WebServerError {
     }
 }
 
-impl From<FramerError> for WebServerError {
-    fn from(err: FramerError) -> WebServerError {
+impl From<FramerError<std::io::Error>> for WebServerError {
+    fn from(err: FramerError<std::io::Error>) -> WebServerError {
         WebServerError::Framer(err)
     }
 }

@@ -13,6 +13,7 @@ use embedded_websocket::{
     framer::{Framer, FramerError, ReadResult},
     WebSocketClient, WebSocketCloseStatusCode, WebSocketOptions, WebSocketSendMessageType,
 };
+use std::error::Error;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "tokio")] {
@@ -27,14 +28,11 @@ cfg_if::cfg_if! {
 #[cfg_attr(feature = "async-std", async_std::main)]
 #[cfg_attr(feature = "tokio", tokio::main)]
 #[cfg_attr(feature = "smol", smol_potat::main)]
-async fn main() -> Result<(), FramerError> {
+async fn main() -> Result<(), FramerError<impl Error>> {
     // open a TCP stream to localhost port 1337
     let address = "127.0.0.1:1337";
     println!("Connecting to: {}", address);
-    let mut stream = TcpStream::connect(address)
-        .await
-        .map_err(anyhow::Error::new)
-        .map_err(FramerError::Io)?;
+    let mut stream = TcpStream::connect(address).await.map_err(FramerError::Io)?;
     println!("Connected.");
 
     let mut read_buf = [0; 4000];
