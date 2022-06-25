@@ -11,7 +11,7 @@ categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
 [dependencies]
-sha1 = "0.10.1"
+sha1 = { version = "0.10.1", default-features = false }
 heapless = "0.7.14"
 byteorder = { version = "1.4.3", default-features = false }
 httparse = { version = "1.7.1", default-features = false }
