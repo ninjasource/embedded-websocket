@@ -135,7 +135,16 @@ pub fn build_connect_handshake_request(
 
     let mut key: [u8; 16] = [0; 16];
     rng.fill_bytes(&mut key);
-    base64::encode_config_slice(&key, base64::STANDARD, &mut key_as_base64);
+
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "base64-simd")] {
+            use base64_simd::{Base64, OutBuf};
+            Base64::STANDARD.encode(&key, OutBuf::from_slice_mut(&mut key_as_base64))?;
+        } else {
+            base64::encode_config_slice(&key, base64::STANDARD, &mut key_as_base64);
+        }
+    }
+
     let sec_websocket_key: String<24> = String::from(str::from_utf8(&key_as_base64)?);
 
     http_request.push_str("GET ")?;
@@ -212,6 +221,15 @@ pub fn build_accept_string(sec_websocket_key: &WebSocketKey, output: &mut [u8]) 
     let mut sha1 = Sha1::new();
     sha1.update(&accept_string);
     let input = sha1.finalize();
-    base64::encode_config_slice(&input, base64::STANDARD, output); // no need for slices since the output WILL be 28 bytes
+
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "base64-simd")] {
+            use base64_simd::{Base64, OutBuf};
+            Base64::STANDARD.encode(&input, OutBuf::from_slice_mut(output))?;
+        } else {
+            base64::encode_config_slice(&input, base64::STANDARD, output); // no need for slices since the output WILL be 28 bytes
+        }
+    }
+
     Ok(())
 }
