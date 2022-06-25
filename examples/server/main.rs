@@ -30,8 +30,9 @@ pub enum WebServerError {
     Io(std::io::Error),
     Framer(FramerError<std::io::Error>),
     WebSocket(ws::Error),
-    HttpError(String),
+    HttpError(httparse::Error),
     Utf8Error,
+    Custom(String),
 }
 
 impl From<std::io::Error> for WebServerError {
@@ -55,6 +56,12 @@ impl From<ws::Error> for WebServerError {
 impl From<Utf8Error> for WebServerError {
     fn from(_: Utf8Error) -> WebServerError {
         WebServerError::Utf8Error
+    }
+}
+
+impl From<httparse::Error> for WebServerError {
+    fn from(err: httparse::Error) -> WebServerError {
+        WebServerError::HttpError(err)
     }
 }
 
@@ -150,7 +157,7 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
             Err(httparse::Error::TooManyHeaders) => {
                 headers.resize(headers.len() * 2, httparse::EMPTY_HEADER)
             }
-            _ => panic!("http parser error"),
+            Err(e) => return Err(e.into()),
         }
     };
 
@@ -164,7 +171,7 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
                 msg = e
             );
             stream.write_all(&html.as_bytes())?;
-            Err(WebServerError::HttpError(e))
+            Err(WebServerError::Custom(e))
         }
     }
 }
