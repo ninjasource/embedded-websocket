@@ -12,13 +12,14 @@ use embedded_websocket as ws;
 use httparse::Request;
 use once_cell::sync::Lazy;
 use route_recognizer::Router;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::str::Utf8Error;
-use std::thread;
-use ws::framer::ReadResult;
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    str::Utf8Error,
+    thread,
+};
 use ws::{
-    framer::{Framer, FramerError},
+    framer::{Framer, FramerError, ReadResult},
     WebSocketSendMessageType, WebSocketServer,
 };
 

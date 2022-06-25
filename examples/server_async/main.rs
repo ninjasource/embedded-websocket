@@ -14,9 +14,8 @@ use httparse::Request;
 use once_cell::sync::Lazy;
 use route_recognizer::Router;
 use std::str::Utf8Error;
-use ws::framer::ReadResult;
 use ws::{
-    framer::{Framer, FramerError},
+    framer::{Framer, FramerError, ReadResult},
     WebSocketSendMessageType, WebSocketServer,
 };
 
