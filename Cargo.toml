@@ -11,20 +11,16 @@ categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
 [dependencies]
-async-std = { version = "1.12.0", optional = true }
 async-trait = { version = "0.1.56", optional = true }
 base64 = { version = "0.13.0", default-features = false }
 base64-simd = { version = "0.5.0", default-features = false, optional = true }
 byteorder = { version = "1.4.3", default-features = false }
 cfg-if = "1.0.0"
 core2 = "0.4.0"
-futures = { version = "0.3.21", optional = true }
 heapless = "0.7.14"
 httparse = { version = "1.7.1", default-features = false }
 rand_core = "0.6.3"
 sha1 = "0.10.1"
-smol = { version = "1.2.5", optional = true }
-tokio = { version = "1.19.2", features = ["io-util"], optional = true }
 
 [dev-dependencies]
 async-std = { version = "1.12.0", features = ["attributes"] }
@@ -44,37 +40,36 @@ default = ["std"]
 # default = []
 std = []
 async = ["std", "async-trait"]
-tokio = ["dep:tokio", "async"]
-futures = ["dep:futures", "async"]
-smol = ["dep:smol", "async"]
-async-std = ["dep:async-std", "async"]
+example-tokio = ["async"]
+example-smol = ["async"]
+example-async-std = ["async"]
 
 [[example]]
 name = "server_tokio"
 path = "examples/server_async/main.rs"
-required-features = ["tokio"]
+required-features = ["example-tokio"]
 
 [[example]]
 name = "server_smol"
 path = "examples/server_async/main.rs"
-required-features = ["smol"]
+required-features = ["example-smol"]
 
 [[example]]
 name = "server_async_std"
 path = "examples/server_async/main.rs"
-required-features = ["async-std"]
+required-features = ["example-async-std"]
 
 [[example]]
 name = "client_tokio"
 path = "examples/client_async/main.rs"
-required-features = ["tokio"]
+required-features = ["example-tokio"]
 
 [[example]]
 name = "client_smol"
 path = "examples/client_async/main.rs"
-required-features = ["smol"]
+required-features = ["example-smol"]
 
 [[example]]
 name = "client_async_std"
 path = "examples/client_async/main.rs"
-required-features = ["async-std"]
+required-features = ["example-async-std"]

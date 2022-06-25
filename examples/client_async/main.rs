@@ -9,6 +9,9 @@
 // Note that we are using the standard library in the demo and making use of the framer helper module
 // but the websocket library remains no_std (see client_full for an example without the framer helper module)
 
+mod compat;
+
+use crate::compat::CompatExt;
 use embedded_websocket::{
     framer::{Framer, FramerError, ReadResult},
     WebSocketClient, WebSocketCloseStatusCode, WebSocketOptions, WebSocketSendMessageType,
@@ -16,18 +19,18 @@ use embedded_websocket::{
 use std::error::Error;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "tokio")] {
+    if #[cfg(feature = "example-tokio")] {
         use tokio::net::TcpStream;
-    } else if #[cfg(feature = "smol")] {
+    } else if #[cfg(feature = "example-smol")] {
         use smol::net::TcpStream;
-    } else if #[cfg(feature = "async-std")] {
+    } else if #[cfg(feature = "example-async-std")] {
         use async_std::net::TcpStream;
     }
 }
 
-#[cfg_attr(feature = "async-std", async_std::main)]
-#[cfg_attr(feature = "tokio", tokio::main)]
-#[cfg_attr(feature = "smol", smol_potat::main)]
+#[cfg_attr(feature = "example-async-std", async_std::main)]
+#[cfg_attr(feature = "example-tokio", tokio::main)]
+#[cfg_attr(feature = "example-smol", smol_potat::main)]
 async fn main() -> Result<(), FramerError<impl Error>> {
     // open a TCP stream to localhost port 1337
     let address = "127.0.0.1:1337";
@@ -56,6 +59,8 @@ async fn main() -> Result<(), FramerError<impl Error>> {
         &mut write_buf,
         &mut websocket,
     );
+    let mut stream = stream.compat_mut();
+
     framer
         .connect_async(&mut stream, &websocket_options)
         .await?;

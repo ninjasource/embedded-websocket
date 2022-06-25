@@ -8,6 +8,9 @@
 // the client as well as responding to any opening and closing handshakes.
 // Note that we are using the standard library in the demo but the websocket library remains no_std
 
+mod compat;
+
+use crate::compat::CompatExt;
 use async_trait::async_trait;
 use embedded_websocket as ws;
 use httparse::Request;
@@ -22,19 +25,19 @@ use ws::{
 type Result<T> = std::result::Result<T, WebServerError>;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "tokio")] {
+    if #[cfg(feature = "example-tokio")] {
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::{TcpListener, TcpStream},
         };
         use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
-    } else if #[cfg(feature = "smol")] {
+    } else if #[cfg(feature = "example-smol")] {
         use smol::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::{TcpListener, TcpStream},
             stream::StreamExt,
         };
-    } else if #[cfg(feature = "async-std")] {
+    } else if #[cfg(feature = "example-async-std")] {
         use async_std::{
             io::{ReadExt as AsyncReadExt, WriteExt as AsyncWriteExt},
             net::{TcpListener, TcpStream},
@@ -76,9 +79,9 @@ impl From<Utf8Error> for WebServerError {
     }
 }
 
-#[cfg_attr(feature = "async-std", async_std::main)]
-#[cfg_attr(feature = "tokio", tokio::main)]
-#[cfg_attr(feature = "smol", smol_potat::main)]
+#[cfg_attr(feature = "example-async-std", async_std::main)]
+#[cfg_attr(feature = "example-tokio", tokio::main)]
+#[cfg_attr(feature = "example-smol", smol_potat::main)]
 async fn main() -> std::io::Result<()> {
     let addr = "127.0.0.1:1337";
     let listener = TcpListener::bind(addr).await?;
@@ -86,7 +89,7 @@ async fn main() -> std::io::Result<()> {
 
     let mut incoming = {
         cfg_if::cfg_if! {
-            if #[cfg(feature = "tokio")] {
+            if #[cfg(feature = "example-tokio")] {
                  TcpListenerStream::new(listener)
             } else {
                  listener.incoming()
@@ -104,13 +107,13 @@ async fn main() -> std::io::Result<()> {
                     }
                 };
 
-                #[cfg(feature = "async-std")]
+                #[cfg(feature = "example-async-std")]
                 async_std::task::spawn(fut);
 
-                #[cfg(feature = "smol")]
+                #[cfg(feature = "example-smol")]
                 smol::spawn(fut).detach();
 
-                #[cfg(feature = "tokio")]
+                #[cfg(feature = "example-tokio")]
                 tokio::spawn(fut);
             }
             Err(e) => println!("Failed to establish a connection: {}", e),
@@ -158,17 +161,20 @@ impl SimpleHandler for Chat {
             );
 
             // complete the opening handshake with the client
-            framer.accept_async(stream, &websocket_context).await?;
+            let mut stream = stream.compat_mut();
+            framer.accept_async(&mut stream, &websocket_context).await?;
             println!("Websocket connection opened");
 
             // read websocket frames
-            while let ReadResult::Text(text) = framer.read_async(stream, &mut frame_buf).await? {
+            while let ReadResult::Text(text) =
+                framer.read_async(&mut stream, &mut frame_buf).await?
+            {
                 println!("Received: {}", text);
 
                 // send the text back to the client
                 framer
                     .write_async(
-                        stream,
+                        &mut stream,
                         WebSocketSendMessageType::Text,
                         true,
                         format!("hello {}", text).as_bytes(),
