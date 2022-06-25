@@ -2,100 +2,16 @@
 // This is the most common use case when working with websockets and is recommended due to the hand shaky nature of
 // the protocol as well as the fact that an input buffer can contain multiple websocket frames or maybe only a fragment of one.
 // This module allows you to work with discrete websocket frames rather than the multiple fragments you read off a stream.
-// NOTE: if you are using the standard library then you can use the built in Read and Write traits from std otherwise
-//       you have to implement the Read and Write traits specified below
+// NOTE: if you are using the standard library then you can use the built in compat::Read and compat::Write traits from std otherwise
+//       you have to implement the compat::Read and compat::Write traits specified below
 
 use crate::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketContext, WebSocketOptions,
+    compat, WebSocket, WebSocketCloseStatusCode, WebSocketContext, WebSocketOptions,
     WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketState, WebSocketSubProtocol,
     WebSocketType,
 };
 use core::{cmp::min, str::Utf8Error};
 use rand_core::RngCore;
-
-pub trait Read<E> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, E>;
-}
-
-pub trait Write<E> {
-    fn write_all(&mut self, buf: &[u8]) -> Result<(), E>;
-}
-
-cfg_if::cfg_if! {
-    if #[cfg(feature = "std")] {
-        impl Read<std::io::Error> for std::net::TcpStream {
-            fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-                std::io::Read::read(self, buf)
-            }
-        }
-
-        impl Write<std::io::Error> for std::net::TcpStream {
-            fn write_all(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
-                std::io::Write::write_all(self, buf)
-            }
-        }
-    }
-}
-
-cfg_if::cfg_if! {
-    if #[cfg(feature = "async")] {
-        #[async_trait::async_trait]
-        pub trait AsyncRead<E> {
-            async fn read(&mut self, buf: &mut [u8]) -> Result<usize, E>;
-        }
-
-        #[async_trait::async_trait]
-        pub trait AsyncWrite<E> {
-            async fn write_all(&mut self, buf: &[u8]) -> Result<(), E>;
-        }
-    }
-}
-
-cfg_if::cfg_if! {
-    if #[cfg(feature = "tokio")] {
-        #[async_trait::async_trait]
-        impl AsyncRead<std::io::Error> for tokio::net::TcpStream {
-            async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-                tokio::io::AsyncReadExt::read(self, buf).await
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl AsyncWrite<std::io::Error> for tokio::net::TcpStream {
-            async fn write_all(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
-                tokio::io::AsyncWriteExt::write_all(self, buf).await
-            }
-        }
-    } else if #[cfg(feature = "smol")] {
-        #[async_trait::async_trait]
-        impl AsyncRead<std::io::Error> for smol::net::TcpStream {
-            async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-                smol::io::AsyncReadExt::read(self, buf).await
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl AsyncWrite<std::io::Error> for smol::net::TcpStream {
-            async fn write_all(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
-                smol::io::AsyncWriteExt::write_all(self, buf).await
-            }
-        }
-    } else if #[cfg(feature = "async-std")] {
-        #[async_trait::async_trait]
-        impl AsyncRead<std::io::Error> for async_std::net::TcpStream {
-            async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-                async_std::io::ReadExt::read(self, buf).await
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl AsyncWrite<std::io::Error> for async_std::net::TcpStream {
-            async fn write_all(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
-                async_std::io::WriteExt::write_all(self, buf).await
-            }
-        }
-    }
-}
 
 pub enum ReadResult<'a> {
     Binary(&'a [u8]),
@@ -132,7 +48,7 @@ where
 {
     pub fn connect<E>(
         &mut self,
-        stream: &mut (impl Read<E> + Write<E>),
+        stream: &mut (impl compat::Read<E> + compat::Write<E>),
         websocket_options: &WebSocketOptions,
     ) -> Result<Option<WebSocketSubProtocol>, FramerError<E>> {
         let (len, web_socket_key) = self
@@ -179,7 +95,7 @@ where
 {
     pub fn accept<E>(
         &mut self,
-        stream: &mut impl Write<E>,
+        stream: &mut impl compat::Write<E>,
         websocket_context: &WebSocketContext,
     ) -> Result<(), FramerError<E>> {
         let len = self.accept_len(&websocket_context)?;
@@ -244,7 +160,7 @@ where
     // calling close on a websocket that has already been closed by the other party has no effect
     pub fn close<E>(
         &mut self,
-        stream: &mut impl Write<E>,
+        stream: &mut impl compat::Write<E>,
         close_status: WebSocketCloseStatusCode,
         status_description: Option<&str>,
     ) -> Result<(), FramerError<E>> {
@@ -268,7 +184,7 @@ where
 
     pub fn write<E>(
         &mut self,
-        stream: &mut impl Write<E>,
+        stream: &mut impl compat::Write<E>,
         message_type: WebSocketSendMessageType,
         end_of_message: bool,
         frame_buf: &[u8],
@@ -285,7 +201,7 @@ where
     // It will wait until the last fragmented frame has arrived.
     pub fn read<'b, E>(
         &mut self,
-        stream: &mut (impl Read<E> + Write<E>),
+        stream: &mut (impl compat::Read<E> + compat::Write<E>),
         frame_buf: &'b mut [u8],
     ) -> Result<ReadResult<'b>, FramerError<E>> {
         loop {
@@ -365,7 +281,7 @@ where
 
     fn send_back<E>(
         &mut self,
-        stream: &mut impl Write<E>,
+        stream: &mut impl compat::Write<E>,
         frame_buf: &'_ mut [u8],
         len_to: usize,
         send_message_type: WebSocketSendMessageType,
@@ -396,7 +312,7 @@ impl<'a, TRng> Framer<'a, TRng, crate::Client>
 where
     TRng: RngCore,
 {
-    pub async fn connect_async<S: AsyncRead<E> + AsyncWrite<E> + Unpin, E>(
+    pub async fn connect_async<S: compat::AsyncRead<E> + compat::AsyncWrite<E> + Unpin, E>(
         &mut self,
         stream: &mut S,
         websocket_options: &'a WebSocketOptions<'a>,
@@ -446,7 +362,7 @@ impl<'a, TRng> Framer<'a, TRng, crate::Server>
 where
     TRng: RngCore,
 {
-    pub async fn accept_async<W: AsyncWrite<E> + Unpin, E>(
+    pub async fn accept_async<W: compat::AsyncWrite<E> + Unpin, E>(
         &mut self,
         stream: &mut W,
         websocket_context: &WebSocketContext,
@@ -468,7 +384,7 @@ where
     TWebSocketType: WebSocketType,
 {
     // calling close on a websocket that has already been closed by the other party has no effect
-    pub async fn close_async<W: AsyncWrite<E> + Unpin, E>(
+    pub async fn close_async<W: compat::AsyncWrite<E> + Unpin, E>(
         &mut self,
         stream: &mut W,
         close_status: WebSocketCloseStatusCode,
@@ -482,7 +398,7 @@ where
         Ok(())
     }
 
-    pub async fn write_async<W: AsyncWrite<E> + Unpin, E>(
+    pub async fn write_async<W: compat::AsyncWrite<E> + Unpin, E>(
         &mut self,
         stream: &mut W,
         message_type: WebSocketSendMessageType,
@@ -498,7 +414,7 @@ where
         Ok(())
     }
 
-    pub async fn read_async<'b, S: AsyncWrite<E> + AsyncRead<E> + Unpin, E>(
+    pub async fn read_async<'b, S: compat::AsyncWrite<E> + compat::AsyncRead<E> + Unpin, E>(
         &mut self,
         stream: &mut S,
         frame_buf: &'b mut [u8],
@@ -580,7 +496,7 @@ where
         }
     }
 
-    async fn send_back_async<W: AsyncWrite<E> + Unpin, E>(
+    async fn send_back_async<W: compat::AsyncWrite<E> + Unpin, E>(
         &mut self,
         stream: &mut W,
         frame_buf: &'_ mut [u8],
