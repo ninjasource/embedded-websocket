@@ -211,6 +211,8 @@ pub enum Error {
     ConvertInfallible,
     RandCore,
     UnexpectedContinuationFrame,
+    #[cfg(feature = "base64-simd")]
+    Base64Error,
 }
 
 impl From<httparse::Error> for Error {
@@ -234,6 +236,13 @@ impl From<core::convert::Infallible> for Error {
 impl From<()> for Error {
     fn from(_: ()) -> Error {
         Error::Unknown
+    }
+}
+
+#[cfg(feature = "base64-simd")]
+impl From<base64_simd::Error> for Error {
+    fn from(_: base64_simd::Error) -> Error {
+        Error::Base64Error
     }
 }
 

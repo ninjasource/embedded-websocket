@@ -17,6 +17,8 @@ byteorder = { version = "1.4.3", default-features = false }
 httparse = { version = "1.7.1", default-features = false }
 rand_core = "0.6.3"
 base64 = { version = "0.13.0", default-features = false }
+base64-simd = { version = "0.5.0", default-features = false, optional = true }
+cfg-if = "1.0.0"
 
 [dev-dependencies]
 rand = "0.8.5"
