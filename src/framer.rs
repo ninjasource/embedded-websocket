@@ -120,7 +120,7 @@ where
             .websocket
             .server_accept(
                 &websocket_context.sec_websocket_key,
-                None,
+                Some(WebSocketContext.sec_websocket_protocol_list[0]),
                 &mut self.write_buf,
             )
             .map_err(FramerError::WebSocket)?;
