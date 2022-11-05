@@ -71,7 +71,7 @@ where
     ) -> Result<Option<WebSocketSubProtocol>, FramerError<E>> {
         let (len, web_socket_key) = self
             .websocket
-            .client_connect(websocket_options, &mut self.write_buf)
+            .client_connect(websocket_options, self.write_buf)
             .map_err(FramerError::WebSocket)?;
         stream
             .write_all(&self.write_buf[..len])
@@ -118,11 +118,7 @@ where
     ) -> Result<(), FramerError<E>> {
         let len = self
             .websocket
-            .server_accept(
-                &websocket_context.sec_websocket_key,
-                None,
-                &mut self.write_buf,
-            )
+            .server_accept(&websocket_context.sec_websocket_key, None, self.write_buf)
             .map_err(FramerError::WebSocket)?;
 
         stream
@@ -287,7 +283,7 @@ where
         let from = &frame_buf[self.frame_cursor..self.frame_cursor + payload_len];
         let len = self
             .websocket
-            .write(send_message_type, true, from, &mut self.write_buf)
+            .write(send_message_type, true, from, self.write_buf)
             .map_err(FramerError::WebSocket)?;
         stream
             .write_all(&self.write_buf[..len])

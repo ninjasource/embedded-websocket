@@ -100,7 +100,7 @@ where
             }
         }
 
-        return Err(FramerError::Disconnected);
+        Err(FramerError::Disconnected)
     }
 }
 
@@ -183,94 +183,92 @@ where
     where
         E: Debug,
     {
-        loop {
-            if self.rx_buf_range.is_empty() {
-                match stream.next().await {
-                    Some(Ok(input)) => {
-                        if rx_buf.len() < input.len() {
-                            return Some(Err(FramerError::RxBufferTooSmall(input.len())));
-                        }
+        if self.rx_buf_range.is_empty() {
+            match stream.next().await {
+                Some(Ok(input)) => {
+                    if rx_buf.len() < input.len() {
+                        return Some(Err(FramerError::RxBufferTooSmall(input.len())));
+                    }
 
-                        rx_buf[..input.len()].copy_from_slice(&input);
-                        self.rx_buf_range = 0..input.len();
-                    }
-                    Some(Err(e)) => {
-                        return Some(Err(FramerError::Io(e)));
-                    }
-                    None => return None,
+                    rx_buf[..input.len()].copy_from_slice(&input);
+                    self.rx_buf_range = 0..input.len();
                 }
+                Some(Err(e)) => {
+                    return Some(Err(FramerError::Io(e)));
+                }
+                None => return None,
             }
-
-            let ws_result = match self.websocket.read(
-                &rx_buf[self.rx_buf_range.start..self.rx_buf_range.end],
-                frame_buf,
-            ) {
-                Ok(ws_result) => ws_result,
-                Err(e) => return Some(Err(FramerError::WebSocket(e))),
-            };
-
-            self.rx_buf_range.start += ws_result.len_from;
-
-            match ws_result.message_type {
-                WebSocketReceiveMessageType::Binary => {
-                    self.frame_cursor += ws_result.len_to;
-                    if ws_result.end_of_message {
-                        let range = 0..self.frame_cursor;
-                        self.frame_cursor = 0;
-                        return Some(Ok(ReadResult::Binary(range)));
-                    }
-                }
-                WebSocketReceiveMessageType::Text => {
-                    self.frame_cursor += ws_result.len_to;
-                    if ws_result.end_of_message {
-                        let range = 0..self.frame_cursor;
-                        self.frame_cursor = 0;
-                        return Some(Ok(ReadResult::Text(range)));
-                    }
-                }
-                WebSocketReceiveMessageType::CloseMustReply => {
-                    let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
-                    match self.websocket.write(
-                        WebSocketSendMessageType::CloseReply,
-                        true,
-                        &frame_buf[range.start..range.end],
-                        tx_buf,
-                    ) {
-                        Ok(len) => match stream.send(&tx_buf[..len]).await {
-                            Ok(()) => {
-                                self.frame_cursor = 0;
-                                return Some(Ok(ReadResult::Close(range)));
-                            }
-                            Err(e) => return Some(Err(FramerError::Io(e))),
-                        },
-                        Err(e) => return Some(Err(FramerError::WebSocket(e))),
-                    }
-                }
-                WebSocketReceiveMessageType::CloseCompleted => return None,
-                WebSocketReceiveMessageType::Pong => {
-                    let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
-                    return Some(Ok(ReadResult::Pong(range)));
-                }
-                WebSocketReceiveMessageType::Ping => {
-                    let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
-                    match self.websocket.write(
-                        WebSocketSendMessageType::Pong,
-                        true,
-                        &frame_buf[range.start..range.end],
-                        tx_buf,
-                    ) {
-                        Ok(len) => match stream.send(&tx_buf[..len]).await {
-                            Ok(()) => {
-                                return Some(Ok(ReadResult::Ping(range)));
-                            }
-                            Err(e) => return Some(Err(FramerError::Io(e))),
-                        },
-                        Err(e) => return Some(Err(FramerError::WebSocket(e))),
-                    }
-                }
-            }
-
-            return None;
         }
+
+        let ws_result = match self.websocket.read(
+            &rx_buf[self.rx_buf_range.start..self.rx_buf_range.end],
+            frame_buf,
+        ) {
+            Ok(ws_result) => ws_result,
+            Err(e) => return Some(Err(FramerError::WebSocket(e))),
+        };
+
+        self.rx_buf_range.start += ws_result.len_from;
+
+        match ws_result.message_type {
+            WebSocketReceiveMessageType::Binary => {
+                self.frame_cursor += ws_result.len_to;
+                if ws_result.end_of_message {
+                    let range = 0..self.frame_cursor;
+                    self.frame_cursor = 0;
+                    return Some(Ok(ReadResult::Binary(range)));
+                }
+            }
+            WebSocketReceiveMessageType::Text => {
+                self.frame_cursor += ws_result.len_to;
+                if ws_result.end_of_message {
+                    let range = 0..self.frame_cursor;
+                    self.frame_cursor = 0;
+                    return Some(Ok(ReadResult::Text(range)));
+                }
+            }
+            WebSocketReceiveMessageType::CloseMustReply => {
+                let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
+                match self.websocket.write(
+                    WebSocketSendMessageType::CloseReply,
+                    true,
+                    &frame_buf[range.start..range.end],
+                    tx_buf,
+                ) {
+                    Ok(len) => match stream.send(&tx_buf[..len]).await {
+                        Ok(()) => {
+                            self.frame_cursor = 0;
+                            return Some(Ok(ReadResult::Close(range)));
+                        }
+                        Err(e) => return Some(Err(FramerError::Io(e))),
+                    },
+                    Err(e) => return Some(Err(FramerError::WebSocket(e))),
+                }
+            }
+            WebSocketReceiveMessageType::CloseCompleted => return None,
+            WebSocketReceiveMessageType::Pong => {
+                let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
+                return Some(Ok(ReadResult::Pong(range)));
+            }
+            WebSocketReceiveMessageType::Ping => {
+                let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
+                match self.websocket.write(
+                    WebSocketSendMessageType::Pong,
+                    true,
+                    &frame_buf[range.start..range.end],
+                    tx_buf,
+                ) {
+                    Ok(len) => match stream.send(&tx_buf[..len]).await {
+                        Ok(()) => {
+                            return Some(Ok(ReadResult::Ping(range)));
+                        }
+                        Err(e) => return Some(Err(FramerError::Io(e))),
+                    },
+                    Err(e) => return Some(Err(FramerError::WebSocket(e))),
+                }
+            }
+        }
+
+        None
     }
 }

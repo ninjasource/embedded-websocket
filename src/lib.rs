@@ -40,7 +40,7 @@ pub type WebSocketKey = String<24>;
 pub type WebSocketSubProtocol = String<24>;
 
 /// Websocket send message type used when sending a websocket frame
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum WebSocketSendMessageType {
     /// A UTF8 encoded text string
     Text = 1,
@@ -68,7 +68,7 @@ impl WebSocketSendMessageType {
 }
 
 /// Websocket receive message type use when reading a websocket frame
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum WebSocketReceiveMessageType {
     /// A UTF8 encoded text string
     Text = 1,
@@ -88,7 +88,7 @@ pub enum WebSocketReceiveMessageType {
 }
 
 /// Websocket close status code as per the rfc6455 websocket spec
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum WebSocketCloseStatusCode {
     /// Normal closure (1000), meaning that the purpose for which the connection was established
     /// has been fulfilled
@@ -170,7 +170,7 @@ impl WebSocketCloseStatusCode {
 }
 
 /// The state of the websocket
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum WebSocketState {
     /// The websocket has been created with `new_client()` or `new_server()`
     None = 0,
@@ -191,7 +191,7 @@ pub enum WebSocketState {
 }
 
 /// Websocket specific errors
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum Error {
     /// Websocket frame has an invalid opcode
     InvalidOpCode,
@@ -237,7 +237,7 @@ impl From<()> for Error {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum WebSocketOpCode {
     ContinuationFrame = 0,
     TextFrame = 1,
