@@ -27,7 +27,7 @@ pub use self::random::EmptyRng;
 // support for working with discrete websocket frames when using IO streams
 // start here!!
 pub mod framer;
-
+pub mod framer_async;
 const MASK_KEY_LEN: usize = 4;
 
 /// Result returning a websocket specific error if encountered
@@ -585,6 +585,7 @@ where
     pub fn read(&mut self, from: &[u8], to: &mut [u8]) -> Result<WebSocketReadResult> {
         if self.state == WebSocketState::Open || self.state == WebSocketState::CloseSent {
             let frame = self.read_frame(from, to)?;
+
             match frame.op_code {
                 WebSocketOpCode::Ping => Ok(frame.to_readresult(WebSocketReceiveMessageType::Ping)),
                 WebSocketOpCode::Pong => Ok(frame.to_readresult(WebSocketReceiveMessageType::Pong)),
