@@ -11,7 +11,6 @@
 
 // support for websockets without using the standard library
 #![cfg_attr(not(feature = "std"), no_std)]
-#![deny(warnings)]
 
 use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};

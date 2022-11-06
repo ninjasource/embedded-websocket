@@ -46,9 +46,7 @@ impl Encoder<&[u8]> for MyCodec {
 async fn main() -> Result<(), FramerError<impl Error>> {
     // Connect to a peer
     let address = "127.0.0.1:1337";
-    let mut tx_buf = [0u8; 4000];
-    let mut rx_buf = [0u8; 4000];
-    let mut frame_buf = [0u8; 4000];
+    let mut buffer = [0u8; 4000];
     let stream = TcpStream::connect(address).await.map_err(FramerError::Io)?;
     let codec = MyCodec::new();
     let mut stream = Framed::new(stream, codec);
@@ -66,7 +64,7 @@ async fn main() -> Result<(), FramerError<impl Error>> {
     let mut framer = Framer::new(websocket);
 
     framer
-        .connect(&mut stream, &mut rx_buf, &mut tx_buf, &websocket_options)
+        .connect(&mut stream, &mut buffer, &websocket_options)
         .await?;
 
     println!("ws handshake complete");
@@ -74,7 +72,7 @@ async fn main() -> Result<(), FramerError<impl Error>> {
     framer
         .write(
             &mut stream,
-            &mut tx_buf,
+            &mut buffer,
             WebSocketSendMessageType::Text,
             true,
             "Hello, world".as_bytes(),
@@ -83,26 +81,22 @@ async fn main() -> Result<(), FramerError<impl Error>> {
 
     println!("sent message");
 
-    while let Some(read_result) = framer
-        .read(&mut stream, &mut rx_buf, &mut tx_buf, &mut frame_buf)
-        .await
-    {
+    while let Some(read_result) = framer.read(&mut stream, &mut buffer).await {
         let read_result = read_result?;
         match read_result {
-            ReadResult::Text(value) => {
-                let buf = &frame_buf[value];
-                let text = core::str::from_utf8(buf).map_err(FramerError::Utf8)?;
+            ReadResult::Text(text) => {
                 println!("received text: {text}");
+
                 framer
                     .close(
                         &mut stream,
-                        &mut tx_buf,
+                        &mut buffer,
                         WebSocketCloseStatusCode::NormalClosure,
                         None,
                     )
                     .await?
             }
-            _ => { // do nothing
+            _ => { // ignore other kinds of messages
             }
         }
     }
