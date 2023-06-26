@@ -112,6 +112,7 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
         }
 
         println!("Closing websocket connection");
+
         Ok(())
     } else {
         Ok(())

@@ -679,7 +679,7 @@ where
             self.state = WebSocketState::CloseSent;
             if let Some(status_description) = status_description {
                 let mut from_buffer: Vec<u8, 256> = Vec::new();
-                BigEndian::write_u16(&mut from_buffer, close_status.to_u16());
+                from_buffer.extend_from_slice(&close_status.to_u16().to_be_bytes())?;
 
                 // restrict the max size of the status_description
                 let len = if status_description.len() < 254 {

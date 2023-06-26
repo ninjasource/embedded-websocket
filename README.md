@@ -92,6 +92,10 @@ println!("Connection closed");
 ## Example websocket server usage
 The server example is a little too verbose to include in this readme, See [server example](./examples/server.rs)
 
+## Async support
+
+Async support is experimental and subject to significant API change.
+
 ## License 
 
 Licensed under either MIT or Apache-2.0 at your option

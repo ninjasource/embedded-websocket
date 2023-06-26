@@ -1,6 +1,6 @@
 [package]
 name = "embedded-websocket"
-version = "0.9.2"
+version = "0.9.3"
 authors = ["David Haig"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -17,13 +17,13 @@ byteorder = { version = "1.4.3", default-features = false }
 httparse = { version = "1.8.0", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 base64 = { version = "0.13.1", default-features = false }
-futures = { version = "0.3.25", default-features = false }
+futures = { version = "0.3.28", default-features = false }
 
 [dev-dependencies]
 rand = "0.8.5"
-bytes = "1.2.1"
-tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
-tokio-util = { version = "0.7.4", features = ["net", "codec"] }
+bytes = "1.4.0"
+tokio = { version = "1.28.2", features = ["macros", "rt-multi-thread"] }
+tokio-util = { version = "0.7.8", features = ["net", "codec"] }
 
 # see readme for no_std support
 [features]

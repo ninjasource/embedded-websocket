@@ -57,7 +57,11 @@ fn main() -> Result<(), FramerError<impl Error>> {
         println!("Received: {}", s);
 
         // close the websocket after receiving the first reply
-        framer.close(&mut stream, WebSocketCloseStatusCode::NormalClosure, None)?;
+        framer.close(
+            &mut stream,
+            WebSocketCloseStatusCode::NormalClosure,
+            Some("Done chatting"),
+        )?;
         println!("Sent close handshake");
     }
 

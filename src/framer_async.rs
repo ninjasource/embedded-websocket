@@ -124,12 +124,12 @@ where
         }
     }
 
-    pub fn encode<'b, E>(
+    pub fn encode<E>(
         &mut self,
         message_type: WebSocketSendMessageType,
         end_of_message: bool,
         from: &[u8],
-        to: &'b mut [u8],
+        to: &mut [u8],
     ) -> Result<usize, FramerError<E>> {
         let len = self
             .websocket
