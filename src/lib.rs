@@ -236,6 +236,27 @@ impl From<()> for Error {
     }
 }
 
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Error::HttpHeader(error) => write!(f, "bad http header {error}"),
+            Error::HttpResponseCodeInvalid(Some(code)) => write!(f, "bad http response ({code})"),
+            _ => write!(f, "{:?}", self),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        if let Self::HttpHeader(error) = self {
+            Some(error)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum WebSocketOpCode {
     ContinuationFrame = 0,
