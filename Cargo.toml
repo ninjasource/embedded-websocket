@@ -18,7 +18,7 @@ httparse = { version = "1.8.0", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 base64 = { version = "0.13.1", default-features = false }
 futures = { version = "0.3.28", default-features = false }
-embedded-io-async = { version = "0.5.0", default-features = false, optional = true}
+embedded-io-async = { version = "0.5.0", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -28,14 +28,20 @@ tokio-util = { version = "0.7.8", features = ["net", "codec"] }
 clap = { version = "3.0.0-beta.5", features = ["derive"] }
 log = "0.4.14"
 env_logger = "0.9.0"
-static_cell = { version = "1.1", features = ["nightly"]}
+static_cell = { version = "1.1", features = ["nightly"] }
 
 [dev-dependencies.embassy-executor]
 git = "https://github.com/embassy-rs/embassy.git"
 package = "embassy-executor"
 version = "0.3.0"
 # rev = "f8299d10f7c0387416989e00acc02d99661537fb"
-features = ["arch-std", "executor-thread", "log", "nightly", "integrated-timers"]
+features = [
+    "arch-std",
+    "executor-thread",
+    "log",
+    "nightly",
+    "integrated-timers",
+]
 
 [dev-dependencies.embassy-time]
 git = "https://github.com/embassy-rs/embassy.git"
@@ -48,7 +54,18 @@ git = "https://github.com/embassy-rs/embassy.git"
 package = "embassy-net"
 version = "0.1.0"
 # rev = "b5748524f86f809d9c8dc2c5b4bb3f07e55dbda1"
-features = ["std", "nightly", "log", "medium-ethernet", "medium-ip", "tcp", "udp", "dns", "dhcpv4", "proto-ipv6"]
+features = [
+    "std",
+    "nightly",
+    "log",
+    "medium-ethernet",
+    "medium-ip",
+    "tcp",
+    "udp",
+    "dns",
+    "dhcpv4",
+    "proto-ipv6",
+]
 
 [dev-dependencies.embassy-net-driver]
 git = "https://github.com/embassy-rs/embassy.git"
@@ -64,8 +81,8 @@ package = "embassy-net-tuntap"
 # see readme for no_std support
 [features]
 default = ["std"]
-# default = []
-std = []
+
+std = ["httparse/std"]
 embedded-io-async = ["dep:embedded-io-async"]
 
 [[example]]
