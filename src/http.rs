@@ -149,8 +149,8 @@ pub fn build_connect_handshake_request(
     http_request.push_str(websocket_options.origin)?;
 
     // turn sub protocol list into a CSV list
-    http_request.push_str("\r\nSec-WebSocket-Protocol: ")?;
     if let Some(sub_protocols) = websocket_options.sub_protocols {
+        http_request.push_str("\r\nSec-WebSocket-Protocol: ")?;
         for (i, sub_protocol) in sub_protocols.iter().enumerate() {
             http_request.push_str(sub_protocol)?;
             if i < (sub_protocols.len() - 1) {
