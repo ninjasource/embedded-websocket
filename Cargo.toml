@@ -25,9 +25,6 @@ rand = "0.8.5"
 bytes = "1.4.0"
 tokio = { version = "1.28.2", features = ["macros", "rt-multi-thread"] }
 tokio-util = { version = "0.7.8", features = ["net", "codec"] }
-clap = { version = "3.0.0-beta.5", features = ["derive"] }
-log = "0.4.14"
-env_logger = "0.9.0"
 embedded-io-adapters = { version = "0.6.1", features = ["tokio-1"] }
 
 # see readme for no_std support
