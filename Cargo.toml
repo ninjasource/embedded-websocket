@@ -18,7 +18,7 @@ httparse = { version = "1.8.0", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 base64 = { version = "0.13.1", default-features = false }
 futures = { version = "0.3.28", default-features = false }
-embedded-io-async = { version = "0.5.0", default-features = false, optional = true }
+embedded-io-async = { version = "0.6.1", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -77,6 +77,8 @@ git = "https://github.com/embassy-rs/embassy.git"
 version = "0.1.0"
 package = "embassy-net-tuntap"
 # rev = "4d60c715e683aaadf25d9f066bde805c725fefb4"
+static_cell = { version = "1.1", features = ["nightly"] }
+embedded-io-adapters = { version = "0.6.1", features = ["tokio-1"] }
 
 # see readme for no_std support
 [features]

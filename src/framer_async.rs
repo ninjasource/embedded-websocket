@@ -1,7 +1,9 @@
-use core::{fmt::Debug, ops::Deref, str::Utf8Error};
-
+#[cfg(not(feature = "embedded-io-async"))]
+use core::ops::Deref;
+use core::{fmt::Debug, str::Utf8Error};
 #[cfg(feature = "embedded-io-async")]
 use embedded_io_async::{ErrorType, Read, Write};
+#[cfg(not(feature = "embedded-io-async"))]
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
 
