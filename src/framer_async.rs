@@ -472,9 +472,7 @@ where
             }
         }
 
-        let rx_start = buffer.len() - self.rx_remainder_len;
-        let (frame_buf, rx_buf) = buffer.split_at_mut(rx_start);
-
+        let (rx_buf, frame_buf) = buffer.split_at_mut(self.rx_remainder_len);
         let ws_result = match self.websocket.read(rx_buf, frame_buf) {
             Ok(ws_result) => ws_result,
             Err(e) => return Some(Err(FramerError::WebSocket(e))),
