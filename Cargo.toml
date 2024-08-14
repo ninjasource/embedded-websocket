@@ -28,56 +28,6 @@ tokio-util = { version = "0.7.8", features = ["net", "codec"] }
 clap = { version = "3.0.0-beta.5", features = ["derive"] }
 log = "0.4.14"
 env_logger = "0.9.0"
-static_cell = { version = "1.1", features = ["nightly"] }
-
-[dev-dependencies.embassy-executor]
-git = "https://github.com/embassy-rs/embassy.git"
-package = "embassy-executor"
-version = "0.3.0"
-# rev = "f8299d10f7c0387416989e00acc02d99661537fb"
-features = [
-    "arch-std",
-    "executor-thread",
-    "log",
-    "nightly",
-    "integrated-timers",
-]
-
-[dev-dependencies.embassy-time]
-git = "https://github.com/embassy-rs/embassy.git"
-package = "embassy-time"
-# rev = "a2c718f61c0587e19d10c5c86ff4cd79272e2b87"
-features = ["log", "std", "nightly"]
-
-[dev-dependencies.embassy-net]
-git = "https://github.com/embassy-rs/embassy.git"
-package = "embassy-net"
-version = "0.1.0"
-# rev = "b5748524f86f809d9c8dc2c5b4bb3f07e55dbda1"
-features = [
-    "std",
-    "nightly",
-    "log",
-    "medium-ethernet",
-    "medium-ip",
-    "tcp",
-    "udp",
-    "dns",
-    "dhcpv4",
-    "proto-ipv6",
-]
-
-[dev-dependencies.embassy-net-driver]
-git = "https://github.com/embassy-rs/embassy.git"
-package = "embassy-net-driver"
-# rev = "83ff3cbc69875f93c5a9bb36825c12df39f04f71"
-
-[dev-dependencies.embassy-net-tuntap]
-git = "https://github.com/embassy-rs/embassy.git"
-version = "0.1.0"
-package = "embassy-net-tuntap"
-# rev = "4d60c715e683aaadf25d9f066bde805c725fefb4"
-static_cell = { version = "1.1", features = ["nightly"] }
 embedded-io-adapters = { version = "0.6.1", features = ["tokio-1"] }
 
 # see readme for no_std support
