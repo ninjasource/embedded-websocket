@@ -30,7 +30,6 @@ embedded-io-adapters = { version = "0.6.1", features = ["tokio-1"] }
 # see readme for no_std support
 [features]
 default = ["std"]
-
 std = ["httparse/std"]
 embedded-io-async = ["dep:embedded-io-async"]
 
