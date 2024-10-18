@@ -727,6 +727,7 @@ where
                 let result = read_continuation(continuation_read, from_buffer, to_buffer);
                 if result.is_fin_bit_set {
                     self.continuation_read = None;
+                    self.continuation_frame_op_code = None;
                 }
                 Ok(result)
             }
