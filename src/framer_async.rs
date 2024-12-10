@@ -4,8 +4,8 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
 
 use crate::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType,
-    WebSocketSendMessageType, WebSocketSubProtocol, WebSocketType,
+    WebSocket, WebSocketCloseStatusCode, WebSocketContext, WebSocketOptions,
+    WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketSubProtocol, WebSocketType,
 };
 
 pub struct CloseMessage<'a> {
@@ -40,6 +40,10 @@ pub enum FramerError<E> {
     RxBufferTooSmall(usize),
 }
 
+/// NOTE: expected buffer layout for read and connect
+/// [0 .. frame_cursor]: already decoded by websocket
+/// [frame_cursor .. len - rx_remainder_len]: free
+/// [len - rx_remainder_len .. len]: raw received bytes (not decoded by websocket yet)
 pub struct Framer<TRng, TWebSocketType>
 where
     TRng: RngCore,
@@ -72,42 +76,64 @@ where
         stream.send(tx_buf).await.map_err(FramerError::Io)?;
         stream.flush().await.map_err(FramerError::Io)?;
 
-        loop {
-            match stream.next().await {
-                Some(buf) => {
-                    let buf = buf.map_err(FramerError::Io)?;
-                    let buf = buf.as_ref();
+        match stream.next().await {
+            Some(buf) => {
+                let buf = buf.map_err(FramerError::Io)?;
+                let buf = buf.as_ref();
 
-                    match self.websocket.client_accept(&web_socket_key, buf) {
-                        Ok((len, sub_protocol)) => {
-                            // "consume" the HTTP header that we have read from the stream
-                            // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
+                match self.websocket.client_accept(&web_socket_key, buf) {
+                    Ok((len, sub_protocol)) => {
+                        // "consume" the HTTP header that we have read from the stream
+                        // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
 
-                            // copy the remaining bytes to the end of the rx_buf (which is also the end of the buffer) because they are the contents of the next websocket frame(s)
-                            let from = len;
-                            let to = buf.len();
-                            let remaining_len = to - from;
+                        // copy the remaining bytes to the end of the rx_buf (which is also the end of the buffer) because they are the contents of the next websocket frame(s)
+                        let from = len;
+                        let to = buf.len();
+                        let remaining_len = to - from;
 
-                            if remaining_len > 0 {
-                                let rx_start = rx_buf.len() - remaining_len;
-                                rx_buf[rx_start..].copy_from_slice(&buf[from..to]);
-                                self.rx_remainder_len = remaining_len;
-                            }
-
-                            return Ok(sub_protocol);
+                        if remaining_len > 0 {
+                            let rx_start = rx_buf.len() - remaining_len;
+                            rx_buf[rx_start..].copy_from_slice(&buf[from..to]);
+                            self.rx_remainder_len = remaining_len;
                         }
-                        Err(crate::Error::HttpHeaderIncomplete) => {
-                            // TODO: continue reading HTTP header in loop
-                            panic!("oh no");
-                        }
-                        Err(e) => {
-                            return Err(FramerError::WebSocket(e));
-                        }
+
+                        Ok(sub_protocol)
                     }
+                    Err(crate::Error::HttpHeaderIncomplete) => {
+                        // TODO: continue reading HTTP header in loop
+                        panic!("oh no");
+                    }
+                    Err(e) => Err(FramerError::WebSocket(e)),
                 }
-                None => return Err(FramerError::Disconnected),
             }
+            None => Err(FramerError::Disconnected),
         }
+    }
+}
+
+impl<TRng> Framer<TRng, crate::Server>
+where
+    TRng: RngCore,
+{
+    pub async fn accept<'a, B, E>(
+        &mut self,
+        stream: &mut (impl Stream<Item = Result<B, E>> + Sink<&'a [u8], Error = E> + Unpin),
+        buffer: &'a mut [u8],
+        websocket_context: &WebSocketContext,
+    ) -> Result<Option<WebSocketSubProtocol>, FramerError<E>> {
+        let sec_websocket_protocol = None;
+        let len = self
+            .websocket
+            .server_accept(
+                &websocket_context.sec_websocket_key,
+                sec_websocket_protocol.as_ref(),
+                buffer,
+            )
+            .map_err(FramerError::WebSocket)?;
+
+        stream.send(&buffer[..len]).await.map_err(FramerError::Io)?;
+        stream.flush().await.map_err(FramerError::Io)?;
+        Ok(sec_websocket_protocol)
     }
 }
 
@@ -121,6 +147,17 @@ where
             websocket,
             frame_cursor: 0,
             rx_remainder_len: 0,
+        }
+    }
+
+    pub fn new_with_rx(
+        websocket: WebSocket<TRng, TWebSocketType>,
+        rx_remainder_len: usize,
+    ) -> Self {
+        Self {
+            websocket,
+            frame_cursor: 0,
+            rx_remainder_len,
         }
     }
 
