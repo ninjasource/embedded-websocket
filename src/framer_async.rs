@@ -1,5 +1,9 @@
-use core::{fmt::Debug, ops::Deref, str::Utf8Error};
-
+#[cfg(not(feature = "embedded-io-async"))]
+use core::ops::Deref;
+use core::{fmt::Debug, str::Utf8Error};
+#[cfg(feature = "embedded-io-async")]
+use embedded_io_async::{ErrorType, Read, Write};
+#[cfg(not(feature = "embedded-io-async"))]
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
 
@@ -50,6 +54,7 @@ where
     rx_remainder_len: usize,
 }
 
+#[cfg(not(feature = "embedded-io-async"))]
 impl<TRng> Framer<TRng, crate::Client>
 where
     TRng: RngCore,
@@ -111,6 +116,7 @@ where
     }
 }
 
+#[cfg(not(feature = "embedded-io-async"))]
 impl<TRng, TWebSocketType> Framer<TRng, TWebSocketType>
 where
     TRng: RngCore,
@@ -294,6 +300,258 @@ where
                 ) {
                     Ok(len) => match stream.send(&tx_buf[..len]).await {
                         Ok(()) => {
+                            return Some(Ok(ReadResult::Ping(&frame_buf[range])));
+                        }
+                        Err(e) => return Some(Err(FramerError::Io(e))),
+                    },
+                    Err(e) => return Some(Err(FramerError::WebSocket(e))),
+                }
+            }
+        }
+
+        None
+    }
+}
+
+#[cfg(feature = "embedded-io-async")]
+impl<TRng> Framer<TRng, crate::Client>
+where
+    TRng: RngCore,
+{
+    pub async fn connect<'a, S>(
+        &mut self,
+        stream: &mut S,
+        buffer: &'a mut [u8],
+        websocket_options: &WebSocketOptions<'_>,
+    ) -> Result<Option<WebSocketSubProtocol>, FramerError<<S as ErrorType>::Error>>
+    where
+        S: Read + Write + Unpin,
+    {
+        let (tx_len, web_socket_key) = self
+            .websocket
+            .client_connect(websocket_options, buffer)
+            .map_err(FramerError::WebSocket)?;
+
+        let (tx_buf, _rx_buf) = buffer.split_at_mut(tx_len);
+        stream.write(tx_buf).await.map_err(FramerError::Io)?;
+        stream.flush().await.map_err(FramerError::Io)?;
+
+        loop {
+            let read_len = stream.read(buffer).await.map_err(FramerError::Io)?;
+
+            match self.websocket.client_accept(&web_socket_key, buffer) {
+                Ok((len, sub_protocol)) => {
+                    // "consume" the HTTP header that we have read from the stream
+                    // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
+
+                    // copy the remaining bytes to the end of the rx_buf (which is also the end of the buffer) because they are the contents of the next websocket frame(s)
+                    let from = len;
+                    let to = read_len;
+                    let remaining_len = to - from;
+
+                    if remaining_len > 0 {
+                        // let rx_start = read_len - remaining_len;
+                        // rx_buf[rx_start..].copy_from_slice(&buf[from..to]);
+                        self.rx_remainder_len = remaining_len;
+                    }
+
+                    return Ok(sub_protocol);
+                }
+                Err(crate::Error::HttpHeaderIncomplete) => {
+                    // TODO: continue reading HTTP header in loop
+                    panic!("oh no");
+                }
+                Err(e) => {
+                    return Err(FramerError::WebSocket(e));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "embedded-io-async")]
+impl<TRng, TWebSocketType> Framer<TRng, TWebSocketType>
+where
+    TRng: RngCore,
+    TWebSocketType: WebSocketType,
+{
+    pub fn new(websocket: WebSocket<TRng, TWebSocketType>) -> Self {
+        Self {
+            websocket,
+            frame_cursor: 0,
+            rx_remainder_len: 0,
+        }
+    }
+
+    pub fn encode<E>(
+        &mut self,
+        message_type: WebSocketSendMessageType,
+        end_of_message: bool,
+        from: &[u8],
+        to: &mut [u8],
+    ) -> Result<usize, FramerError<E>> {
+        let len = self
+            .websocket
+            .write(message_type, end_of_message, from, to)
+            .map_err(FramerError::WebSocket)?;
+
+        Ok(len)
+    }
+
+    pub async fn write<'b, T>(
+        &mut self,
+        tx: &mut T,
+        tx_buf: &'b mut [u8],
+        message_type: WebSocketSendMessageType,
+        end_of_message: bool,
+        frame_buf: &[u8],
+    ) -> Result<(), FramerError<<T as ErrorType>::Error>>
+    where
+        T: Write + Unpin,
+    {
+        let len = self
+            .websocket
+            .write(message_type, end_of_message, frame_buf, tx_buf)
+            .map_err(FramerError::WebSocket)?;
+
+        tx.write(&tx_buf[..len])
+            .await
+            .map_err(FramerError::Io)
+            .unwrap();
+        tx.flush().await.map_err(FramerError::Io).unwrap();
+        Ok(())
+    }
+
+    pub async fn close<'b, T>(
+        &mut self,
+        tx: &mut T,
+        tx_buf: &'b mut [u8],
+        close_status: WebSocketCloseStatusCode,
+        status_description: Option<&str>,
+    ) -> Result<(), FramerError<<T as ErrorType>::Error>>
+    where
+        T: Write + Unpin,
+    {
+        let len = self
+            .websocket
+            .close(close_status, status_description, tx_buf)
+            .map_err(FramerError::WebSocket)?;
+
+        tx.write(&tx_buf[..len])
+            .await
+            .map_err(FramerError::Io)
+            .unwrap();
+        tx.flush().await.map_err(FramerError::Io).unwrap();
+        Ok(())
+    }
+
+    // NOTE: any unused bytes read from the stream but not decoded are stored at the end
+    // of the buffer to be used next time this read function is called. This also applies to
+    // any unused bytes read when the connect handshake was made. Therefore it is important that
+    // the caller does not clear this buffer between calls or use it for anthing other than reads.
+    pub async fn read<'a, S>(
+        &mut self,
+        stream: &mut S,
+        buffer: &'a mut [u8],
+    ) -> Option<Result<ReadResult<'a>, FramerError<<S as ErrorType>::Error>>>
+    where
+        S: Read + Write + Unpin,
+    {
+        if self.rx_remainder_len == 0 {
+            match stream.read(buffer).await {
+                Ok(read_len) => {
+                    if buffer.len() < read_len {
+                        return Some(Err(FramerError::RxBufferTooSmall(read_len)));
+                    }
+
+                    self.rx_remainder_len = read_len
+                }
+                Err(error) => {
+                    return Some(Err(FramerError::Io(error)));
+                }
+            }
+        }
+
+        let (rx_buf, frame_buf) = buffer.split_at_mut(self.rx_remainder_len);
+        let ws_result = match self.websocket.read(rx_buf, frame_buf) {
+            Ok(ws_result) => ws_result,
+            Err(e) => return Some(Err(FramerError::WebSocket(e))),
+        };
+
+        self.rx_remainder_len -= ws_result.len_from;
+
+        match ws_result.message_type {
+            WebSocketReceiveMessageType::Binary => {
+                self.frame_cursor += ws_result.len_to;
+                if ws_result.end_of_message {
+                    let range = 0..self.frame_cursor;
+                    self.frame_cursor = 0;
+                    return Some(Ok(ReadResult::Binary(&frame_buf[range])));
+                }
+            }
+            WebSocketReceiveMessageType::Text => {
+                self.frame_cursor += ws_result.len_to;
+                if ws_result.end_of_message {
+                    let range = 0..self.frame_cursor;
+                    self.frame_cursor = 0;
+                    match core::str::from_utf8(&frame_buf[range]) {
+                        Ok(text) => return Some(Ok(ReadResult::Text(text))),
+                        Err(e) => return Some(Err(FramerError::Utf8(e))),
+                    }
+                }
+            }
+            WebSocketReceiveMessageType::CloseMustReply => {
+                let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
+
+                // create a tx_buf from the end of the frame_buf
+                let tx_buf_len = ws_result.len_to + 14; // for extra websocket header
+                let split_at = frame_buf.len() - tx_buf_len;
+                let (frame_buf, tx_buf) = frame_buf.split_at_mut(split_at);
+
+                match self.websocket.write(
+                    WebSocketSendMessageType::CloseReply,
+                    true,
+                    &frame_buf[range.start..range.end],
+                    tx_buf,
+                ) {
+                    Ok(len) => match stream.write(&tx_buf[..len]).await {
+                        Ok(_write_len) => {
+                            self.frame_cursor = 0;
+                            let status_code = ws_result
+                                .close_status
+                                .expect("close message must have code");
+                            let reason = &frame_buf[range];
+                            return Some(Ok(ReadResult::Close(CloseMessage {
+                                status_code,
+                                reason,
+                            })));
+                        }
+                        Err(e) => return Some(Err(FramerError::Io(e))),
+                    },
+                    Err(e) => return Some(Err(FramerError::WebSocket(e))),
+                }
+            }
+            WebSocketReceiveMessageType::CloseCompleted => return None,
+            WebSocketReceiveMessageType::Pong => {
+                let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
+                return Some(Ok(ReadResult::Pong(&frame_buf[range])));
+            }
+            WebSocketReceiveMessageType::Ping => {
+                let range = self.frame_cursor..self.frame_cursor + ws_result.len_to;
+
+                // create a tx_buf from the end of the frame_buf
+                let tx_buf_len = ws_result.len_to + 14; // for extra websocket header
+                let split_at = frame_buf.len() - tx_buf_len;
+                let (frame_buf, tx_buf) = frame_buf.split_at_mut(split_at);
+
+                match self.websocket.write(
+                    WebSocketSendMessageType::Pong,
+                    true,
+                    &frame_buf[range.start..range.end],
+                    tx_buf,
+                ) {
+                    Ok(len) => match stream.write(&tx_buf[..len]).await {
+                        Ok(_write_len) => {
                             return Some(Ok(ReadResult::Ping(&frame_buf[range])));
                         }
                         Err(e) => return Some(Err(FramerError::Io(e))),
