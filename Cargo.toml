@@ -12,7 +12,7 @@ readme = "README.md"
 
 [dependencies]
 sha1 = { version = "0.10.6", default-features = false }
-heapless = { version = "0.7.16", default-features = false }
+heapless = { version = "0.8.0", default-features = false }
 byteorder = { version = "1.5.0", default-features = false }
 httparse = { version = "1.9.5", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }

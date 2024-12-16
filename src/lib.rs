@@ -417,8 +417,8 @@ where
     /// use embedded_websocket as ws;
     /// let mut buffer: [u8; 1000] = [0; 1000];
     /// let mut ws_server = ws::WebSocketServer::new_server();
-    /// let ws_key = ws::WebSocketKey::from("Z7OY1UwHOx/nkSz38kfPwg==");
-    /// let sub_protocol = ws::WebSocketSubProtocol::from("chat");
+    /// let ws_key = ws::WebSocketKey::try_from("Z7OY1UwHOx/nkSz38kfPwg==").expect("key too long for heapless::String");
+    /// let sub_protocol = ws::WebSocketSubProtocol::try_from("chat").expect("subprotocol too long for heapless::String");
     /// let len = ws_server
     ///     .server_accept(&ws_key, Some(&sub_protocol), &mut buffer)
     ///     .unwrap();
@@ -522,7 +522,7 @@ where
     /// ```
     /// use embedded_websocket as ws;
     /// let mut ws_client = ws::WebSocketClient::new_client(rand::thread_rng());
-    /// let ws_key = ws::WebSocketKey::from("Z7OY1UwHOx/nkSz38kfPwg==");
+    /// let ws_key = ws::WebSocketKey::try_from("Z7OY1UwHOx/nkSz38kfPwg==").expect("key too long for heapless::String");
     /// let server_response_html = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Protocol: chat\r\nSec-WebSocket-Accept: ptPnPeDOTo6khJlzmLhOZSh2tAY=\r\n\r\n";    ///
     /// let (len, sub_protocol) = ws_client.client_accept(&ws_key, server_response_html.as_bytes())
     ///     .unwrap();
@@ -1135,8 +1135,10 @@ Upgrade: websocket
     fn server_accept_should_write_sub_protocol() {
         let mut buffer: [u8; 1000] = [0; 1000];
         let mut ws_server = WebSocketServer::new_server();
-        let ws_key = WebSocketKey::from("Z7OY1UwHOx/nkSz38kfPwg==");
-        let sub_protocol = WebSocketSubProtocol::from("chat");
+        let ws_key = WebSocketKey::try_from("Z7OY1UwHOx/nkSz38kfPwg==")
+            .expect("Key too long for heapless::String");
+        let sub_protocol = WebSocketSubProtocol::try_from("chat")
+            .expect("Subprotocol too long for heapless::String");
         let size = ws_server
             .server_accept(&ws_key, Some(&sub_protocol), &mut buffer)
             .unwrap();
