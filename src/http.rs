@@ -54,13 +54,13 @@ pub fn read_http_header<'a>(
                         // it is safe to unwrap here because we have checked
                         // the size of the list beforehand
                         sec_websocket_protocol_list
-                            .push(String::from(item))
+                            .push(String::try_from(item)?)
                             .unwrap();
                     }
                 }
             }
             "Sec-WebSocket-Key" => {
-                sec_websocket_key = String::from(str::from_utf8(value)?);
+                sec_websocket_key = String::try_from(str::from_utf8(value)?)?;
             }
             &_ => {
                 // ignore all other headers
@@ -111,7 +111,8 @@ pub fn read_server_connect_handshake_response(
                         }
                     }
                     "Sec-WebSocket-Protocol" => {
-                        sec_websocket_protocol = Some(String::from(str::from_utf8(item.value)?));
+                        sec_websocket_protocol =
+                            Some(String::try_from(str::from_utf8(item.value)?)?);
                     }
                     _ => {
                         // ignore all other headers
@@ -136,7 +137,7 @@ pub fn build_connect_handshake_request(
     let mut key: [u8; 16] = [0; 16];
     rng.fill_bytes(&mut key);
     base64::encode_config_slice(key, base64::STANDARD, &mut key_as_base64);
-    let sec_websocket_key: String<24> = String::from(str::from_utf8(&key_as_base64)?);
+    let sec_websocket_key: String<24> = String::try_from(str::from_utf8(&key_as_base64)?)?;
 
     http_request.push_str("GET ")?;
     http_request.push_str(websocket_options.path)?;
