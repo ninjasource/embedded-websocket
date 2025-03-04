@@ -26,7 +26,7 @@ fn main() -> Result<(), FramerError<impl Error>> {
     let mut read_cursor = 0;
     let mut write_buf = [0; 4000];
     let mut frame_buf = [0; 4000];
-    let mut websocket = WebSocketClient::new_client(rand::thread_rng());
+    let mut websocket = WebSocketClient::new_client(rand::rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
