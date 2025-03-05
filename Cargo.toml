@@ -15,12 +15,12 @@ sha1 = { version = "0.10.6", default-features = false }
 heapless = { version = "0.7.16", default-features = false }
 byteorder = { version = "1.5.0", default-features = false }
 httparse = { version = "1.9.5", default-features = false }
-rand_core = { version = "0.6.4", default-features = false }
+rand_core = { version = "0.9.3", default-features = false }
 base64 = { version = "0.13.1", default-features = false }
 futures = { version = "0.3.31", default-features = false }
 
 [dev-dependencies]
-rand = "0.8.5"
+rand = "0.9.0"
 bytes = "1.9.0"
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
 tokio-util = { version = "0.7.13", features = ["net", "codec"] }

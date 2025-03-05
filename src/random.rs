@@ -8,23 +8,14 @@ use rand_core::RngCore;
 // the key is sent with the payload anyway
 
 #[derive(Default)]
-pub struct EmptyRng {}
+pub struct EmptyRng;
 
 impl EmptyRng {
-    pub fn new() -> EmptyRng {
-        EmptyRng {}
-    }
+    pub fn new() -> Self { Self }
 }
 
 impl RngCore for EmptyRng {
-    fn next_u32(&mut self) -> u32 {
-        0
-    }
-    fn next_u64(&mut self) -> u64 {
-        0
-    }
+    fn next_u32(&mut self) -> u32 { 0 }
+    fn next_u64(&mut self) -> u64 { 0 }
     fn fill_bytes(&mut self, _dest: &mut [u8]) {}
-    fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> core::result::Result<(), rand_core::Error> {
-        Ok(())
-    }
 }

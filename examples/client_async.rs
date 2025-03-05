@@ -50,7 +50,7 @@ async fn main() -> Result<(), FramerError<impl Error>> {
     let stream = TcpStream::connect(address).await.map_err(FramerError::Io)?;
     let codec = MyCodec::new();
     let mut stream = Framed::new(stream, codec);
-    let websocket = WebSocketClient::new_client(rand::thread_rng());
+    let websocket = WebSocketClient::new_client(rand::rng());
 
     // initiate a websocket opening handshake
     let websocket_options = WebSocketOptions {
