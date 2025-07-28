@@ -54,13 +54,13 @@ pub fn read_http_header<'a>(
                         // it is safe to unwrap here because we have checked
                         // the size of the list beforehand
                         sec_websocket_protocol_list
-                            .push(String::try_from(item)?)
+                            .push(String::from(item))
                             .unwrap();
                     }
                 }
             },
             "Sec-WebSocket-Key" => {
-                sec_websocket_key = String::try_from(str::from_utf8(value)?)?;
+                sec_websocket_key = String::from(str::from_utf8(value)?);
             },
             _ => {
                 // ignore all other headers
