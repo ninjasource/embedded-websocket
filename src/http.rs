@@ -45,7 +45,7 @@ pub fn read_http_header<'a>(
     let mut sec_websocket_key = String::new();
 
     for (name, value) in headers {
-        match name {
+        match_ascii_case_insensitive!{ name, 
             "Upgrade" => is_websocket_request = str::from_utf8(value)? == "websocket",
             "Sec-WebSocket-Protocol" => {
                 // extract a csv list of supported sub protocols
@@ -54,15 +54,15 @@ pub fn read_http_header<'a>(
                         // it is safe to unwrap here because we have checked
                         // the size of the list beforehand
                         sec_websocket_protocol_list
-                            .push(String::from(item))
+                            .push(String::try_from(item)?)
                             .unwrap();
                     }
                 }
-            }
+            },
             "Sec-WebSocket-Key" => {
-                sec_websocket_key = String::from(str::from_utf8(value)?);
-            }
-            &_ => {
+                sec_websocket_key = String::try_from(str::from_utf8(value)?)?;
+            },
+            _ => {
                 // ignore all other headers
             }
         }
@@ -76,6 +76,14 @@ pub fn read_http_header<'a>(
     } else {
         Ok(None)
     }
+}
+
+macro_rules! match_ascii_case_insensitive {
+    ($m:expr, $($case:literal => $do:expr),+ , _ => $default:expr) => {
+        if false {}
+        $(else if $m.eq_ignore_ascii_case($case) { $do })+
+        else {$default}
+    };
 }
 
 pub fn read_server_connect_handshake_response(
