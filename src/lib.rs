@@ -1325,8 +1325,6 @@ Upgrade: websocket
 
         let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
         ws_client.state = WebSocketState::Open;
-        let mut ws_server = WebSocketServer::new_server();
-        ws_server.state = WebSocketState::Open;
 
         ws_client
             .write(

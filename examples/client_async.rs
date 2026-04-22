@@ -1,46 +1,15 @@
 use std::error::Error;
-use std::io;
 
-use bytes::{BufMut, BytesMut};
 use tokio::net::TcpStream;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::Framed;
 
+use crate::common::MyCodec;
 use embedded_websocket::{
     framer_async::{Framer, FramerError, ReadResult},
     WebSocketClient, WebSocketCloseStatusCode, WebSocketOptions, WebSocketSendMessageType,
 };
 
-struct MyCodec {}
-
-impl MyCodec {
-    fn new() -> Self {
-        MyCodec {}
-    }
-}
-
-impl Decoder for MyCodec {
-    type Item = BytesMut;
-    type Error = io::Error;
-
-    fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<BytesMut>, io::Error> {
-        if !buf.is_empty() {
-            let len = buf.len();
-            Ok(Some(buf.split_to(len)))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-impl Encoder<&[u8]> for MyCodec {
-    type Error = io::Error;
-
-    fn encode(&mut self, data: &[u8], buf: &mut BytesMut) -> Result<(), io::Error> {
-        buf.reserve(data.len());
-        buf.put(data);
-        Ok(())
-    }
-}
+mod common;
 
 #[tokio::main]
 async fn main() -> Result<(), FramerError<impl Error>> {

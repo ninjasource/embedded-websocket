@@ -4,8 +4,8 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
 
 use crate::{
-    WebSocket, WebSocketCloseStatusCode, WebSocketOptions, WebSocketReceiveMessageType,
-    WebSocketSendMessageType, WebSocketSubProtocol, WebSocketType,
+    WebSocket, WebSocketCloseStatusCode, WebSocketContext, WebSocketOptions,
+    WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketSubProtocol, WebSocketType,
 };
 
 pub struct CloseMessage<'a> {
@@ -48,6 +48,29 @@ where
     websocket: WebSocket<TRng, TWebSocketType>,
     frame_cursor: usize,
     rx_remainder_len: usize,
+}
+
+impl<TRng> Framer<TRng, crate::Server>
+where
+    TRng: RngCore,
+{
+    pub async fn accept<'a, B, E>(
+        &mut self,
+        stream: &mut (impl Stream<Item = Result<B, E>> + Sink<&'a [u8], Error = E> + Unpin),
+        buffer: &'a mut [u8],
+        websocket_context: &WebSocketContext,
+    ) -> Result<(), FramerError<E>> {
+        let len = self
+            .websocket
+            .server_accept(&websocket_context.sec_websocket_key, None, buffer)
+            .map_err(FramerError::WebSocket)?;
+
+        stream
+            .send(&mut buffer[..len])
+            .await
+            .map_err(FramerError::Io)?;
+        Ok(())
+    }
 }
 
 impl<TRng> Framer<TRng, crate::Client>

@@ -22,7 +22,11 @@ futures = { version = "0.3.31", default-features = false }
 [dev-dependencies]
 rand = "0.8.5"
 bytes = "1.9.0"
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.42.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "io-util",
+] }
 tokio-util = { version = "0.7.13", features = ["net", "codec"] }
 
 # see readme for no_std support
