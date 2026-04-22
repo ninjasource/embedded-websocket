@@ -47,7 +47,7 @@ pub fn read_http_header<'a>(
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("upgrade") {
             is_websocket_request = str::from_utf8(value)?.eq_ignore_ascii_case("websocket");
-        } else if name.eq_ignore_ascii_case("sec-webSocket-protocol") {
+        } else if name.eq_ignore_ascii_case("sec-websocket-protocol") {
             // extract a csv list of supported sub protocols
             for item in str::from_utf8(value)?.split(", ") {
                 if sec_websocket_protocol_list.len() < sec_websocket_protocol_list.capacity() {
@@ -58,7 +58,7 @@ pub fn read_http_header<'a>(
                         .unwrap();
                 }
             }
-        } else if name.eq_ignore_ascii_case("sec-webSocket-key") {
+        } else if name.eq_ignore_ascii_case("sec-websocket-key") {
             sec_websocket_key = String::from(str::from_utf8(value)?);
         }
     }
@@ -93,24 +93,18 @@ pub fn read_server_connect_handshake_response(
 
             let mut sec_websocket_protocol: Option<WebSocketSubProtocol> = None;
             for item in response.headers.iter() {
-                match item.name {
-                    "Sec-WebSocket-Accept" => {
-                        let mut output = [0; 28];
-                        build_accept_string(sec_websocket_key, &mut output)?;
+                if item.name.eq_ignore_ascii_case("sec-websocket-accept") {
+                    let mut output = [0; 28];
+                    build_accept_string(sec_websocket_key, &mut output)?;
 
-                        let expected_accept_string = str::from_utf8(&output)?;
-                        let actual_accept_string = str::from_utf8(item.value)?;
+                    let expected_accept_string = str::from_utf8(&output)?;
+                    let actual_accept_string = str::from_utf8(item.value)?;
 
-                        if actual_accept_string != expected_accept_string {
-                            return Err(Error::AcceptStringInvalid);
-                        }
+                    if actual_accept_string != expected_accept_string {
+                        return Err(Error::AcceptStringInvalid);
                     }
-                    "Sec-WebSocket-Protocol" => {
-                        sec_websocket_protocol = Some(String::from(str::from_utf8(item.value)?));
-                    }
-                    _ => {
-                        // ignore all other headers
-                    }
+                } else if item.name.eq_ignore_ascii_case("sec-websocket-protocol") {
+                    sec_websocket_protocol = Some(String::from(str::from_utf8(item.value)?));
                 }
             }
 
