@@ -45,26 +45,21 @@ pub fn read_http_header<'a>(
     let mut sec_websocket_key = String::new();
 
     for (name, value) in headers {
-        match name {
-            "Upgrade" => is_websocket_request = str::from_utf8(value)? == "websocket",
-            "Sec-WebSocket-Protocol" => {
-                // extract a csv list of supported sub protocols
-                for item in str::from_utf8(value)?.split(", ") {
-                    if sec_websocket_protocol_list.len() < sec_websocket_protocol_list.capacity() {
-                        // it is safe to unwrap here because we have checked
-                        // the size of the list beforehand
-                        sec_websocket_protocol_list
-                            .push(String::from(item))
-                            .unwrap();
-                    }
+        if name.eq_ignore_ascii_case("upgrade") {
+            is_websocket_request = str::from_utf8(value)?.eq_ignore_ascii_case("websocket");
+        } else if name.eq_ignore_ascii_case("sec-webSocket-protocol") {
+            // extract a csv list of supported sub protocols
+            for item in str::from_utf8(value)?.split(", ") {
+                if sec_websocket_protocol_list.len() < sec_websocket_protocol_list.capacity() {
+                    // it is safe to unwrap here because we have checked
+                    // the size of the list beforehand
+                    sec_websocket_protocol_list
+                        .push(String::from(item))
+                        .unwrap();
                 }
             }
-            "Sec-WebSocket-Key" => {
-                sec_websocket_key = String::from(str::from_utf8(value)?);
-            }
-            &_ => {
-                // ignore all other headers
-            }
+        } else if name.eq_ignore_ascii_case("sec-webSocket-key") {
+            sec_websocket_key = String::from(str::from_utf8(value)?);
         }
     }
 
