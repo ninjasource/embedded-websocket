@@ -77,7 +77,7 @@ pub fn read_server_connect_handshake_response(
     sec_websocket_key: &WebSocketKey,
     from: &[u8],
 ) -> Result<(usize, Option<WebSocketSubProtocol>)> {
-    let mut headers = [httparse::EMPTY_HEADER; 16];
+    let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut response = httparse::Response::new(&mut headers);
 
     match response.parse(from)? {
