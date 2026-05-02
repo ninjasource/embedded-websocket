@@ -291,3 +291,175 @@ where
         Ok(())
     }
 }
+
+// ************************************************************************************************
+// **************************************** TESTS *************************************************
+// ************************************************************************************************
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use crate::{WebSocketClient, WebSocketOpCode, WebSocketServer};
+
+    struct DummyStream {
+        pub read_buf: Vec<u8>, // starts off populated
+        pub read_cursor: usize,
+        pub write_buf: Vec<u8>, // starts off empty
+    }
+
+    impl DummyStream {
+        pub fn new(read_buf: Vec<u8>) -> Self {
+            Self {
+                read_buf,
+                read_cursor: 0,
+                write_buf: Vec::new(),
+            }
+        }
+    }
+
+    impl<E> Stream<E> for DummyStream {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize, E> {
+            let len = buf.len().min(self.read_buf.len() - self.read_cursor);
+            buf[..len].copy_from_slice(&self.read_buf[self.read_cursor..self.read_cursor + len]);
+            self.read_cursor += len;
+            Ok(len)
+        }
+
+        fn write_all(&mut self, buf: &[u8]) -> Result<(), E> {
+            self.write_buf.extend_from_slice(buf);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn fragmented_frames() {
+        let mut read_buf = vec![0; 1024];
+        let mut write_buf = vec![0; 1024];
+        let mut read_cursor = 0;
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut client_framer = Framer::new(
+            &mut read_buf,
+            &mut read_cursor,
+            &mut write_buf,
+            &mut ws_client,
+        );
+
+        let mut frame_buf = vec![0; 1024];
+        let frames = get_fragmented_frames();
+        let mut stream = DummyStream::new(frames);
+        let frame = client_framer
+            .read::<()>(&mut stream, &mut frame_buf)
+            .unwrap();
+        match frame {
+            ReadResult::Text(x) => {
+                assert_eq!(x, "hello world!")
+            }
+            _ => panic!("expected text frame"),
+        };
+    }
+
+    #[test]
+    fn fragmented_frames_with_control_frames() {
+        let mut read_buf = vec![0; 1024];
+        let mut write_buf = vec![0; 1024];
+        let mut read_cursor = 0;
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut client_framer = Framer::new(
+            &mut read_buf,
+            &mut read_cursor,
+            &mut write_buf,
+            &mut ws_client,
+        );
+
+        let mut frame_buf = vec![0; 1024];
+        let frames = get_fragmented_frames_with_ping();
+        let mut stream = DummyStream::new(frames);
+        let frame = client_framer
+            .read::<()>(&mut stream, &mut frame_buf)
+            .unwrap();
+        match frame {
+            ReadResult::Text(x) => {
+                assert_eq!(x, "hello world!")
+            }
+            _ => panic!("expected text frame"),
+        };
+    }
+
+    fn get_fragmented_frames() -> Vec<u8> {
+        // returns a buffer with 3 websocket frames.
+        // A fragmented text frame
+        //   followed by a text continuation frame
+        //   followed by a final text continuation frame
+        // "hello" + " world" + "!"
+        let mut messages = Vec::new();
+        let mut scratch = vec![0u8; 1024];
+        let mut ws_server = WebSocketServer::new_server();
+        let len = ws_server
+            .write_frame(
+                "hello".as_bytes(),
+                &mut scratch,
+                WebSocketOpCode::TextFrame,
+                false,
+            )
+            .unwrap();
+        messages.extend_from_slice(&scratch[..len]);
+        let len = ws_server
+            .write_frame(
+                " world".as_bytes(),
+                &mut scratch,
+                WebSocketOpCode::ContinuationFrame,
+                false,
+            )
+            .unwrap();
+        messages.extend_from_slice(&scratch[..len]);
+
+        let len = ws_server
+            .write_frame(
+                "!".as_bytes(),
+                &mut scratch,
+                WebSocketOpCode::ContinuationFrame,
+                true,
+            )
+            .unwrap();
+        messages.extend_from_slice(&scratch[..len]);
+        messages
+    }
+
+    fn get_fragmented_frames_with_ping() -> Vec<u8> {
+        // returns a buffer with 3 websocket frames.
+        // A fragmented text frame
+        //   followed by a Ping control message
+        //   followed by a final text continuation frame
+        // "hello" + Ping + " world!"
+        let mut messages = Vec::new();
+        let mut scratch = vec![0u8; 1024];
+        let mut ws_server = WebSocketServer::new_server();
+        let len = ws_server
+            .write_frame(
+                "hello".as_bytes(),
+                &mut scratch,
+                WebSocketOpCode::TextFrame,
+                false,
+            )
+            .unwrap();
+        messages.extend_from_slice(&scratch[..len]);
+        let len = ws_server
+            .write_frame(b"", &mut scratch, WebSocketOpCode::Ping, true)
+            .unwrap();
+        messages.extend_from_slice(&scratch[..len]);
+        let len = ws_server
+            .write_frame(
+                " world!".as_bytes(),
+                &mut scratch,
+                WebSocketOpCode::ContinuationFrame,
+                true,
+            )
+            .unwrap();
+        messages.extend_from_slice(&scratch[..len]);
+        messages
+    }
+}

@@ -734,17 +734,26 @@ where
             None => {
                 let (mut result, continuation_read) = read_frame(from_buffer, to_buffer)?;
 
-                // override the op code we get from the result with our continuation frame opcode if it exists
-                if let Some(continuation_frame_op_code) = self.continuation_frame_op_code {
-                    result.op_code = continuation_frame_op_code;
+                // handle fragmented messages
+                match result.op_code {
+                    WebSocketOpCode::BinaryFrame | WebSocketOpCode::TextFrame => {
+                        // set the continuation frame op code if this is a fragmented message
+                        self.continuation_frame_op_code = if result.is_fin_bit_set {
+                            None
+                        } else {
+                            Some(result.op_code)
+                        };
+                    }
+                    WebSocketOpCode::ContinuationFrame => {
+                        // override the op code we get from the result with our continuation frame opcode if it exists
+                        if let Some(continuation_frame_op_code) = self.continuation_frame_op_code {
+                            result.op_code = continuation_frame_op_code;
+                        }
+                    }
+                    _ => {
+                        // control frames should not affect the continuation frame mechanics
+                    }
                 }
-
-                // reset the continuation frame op code to None if this is the last fragment (or there is no fragmentation)
-                self.continuation_frame_op_code = if result.is_fin_bit_set {
-                    None
-                } else {
-                    Some(result.op_code)
-                };
 
                 self.continuation_read = continuation_read;
                 Ok(result)
