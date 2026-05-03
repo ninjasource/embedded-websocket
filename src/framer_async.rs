@@ -65,10 +65,7 @@ where
             .server_accept(&websocket_context.sec_websocket_key, None, buffer)
             .map_err(FramerError::WebSocket)?;
 
-        stream
-            .send(&mut buffer[..len])
-            .await
-            .map_err(FramerError::Io)?;
+        stream.send(&buffer[..len]).await.map_err(FramerError::Io)?;
         Ok(())
     }
 }
@@ -95,41 +92,37 @@ where
         stream.send(tx_buf).await.map_err(FramerError::Io)?;
         stream.flush().await.map_err(FramerError::Io)?;
 
-        loop {
-            match stream.next().await {
-                Some(buf) => {
-                    let buf = buf.map_err(FramerError::Io)?;
-                    let buf = buf.as_ref();
+        match stream.next().await {
+            Some(buf) => {
+                let buf = buf.map_err(FramerError::Io)?;
+                let buf = buf.as_ref();
 
-                    match self.websocket.client_accept(&web_socket_key, buf) {
-                        Ok((len, sub_protocol)) => {
-                            // "consume" the HTTP header that we have read from the stream
-                            // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
+                match self.websocket.client_accept(&web_socket_key, buf) {
+                    Ok((len, sub_protocol)) => {
+                        // "consume" the HTTP header that we have read from the stream
+                        // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
 
-                            // copy the remaining bytes to the end of the rx_buf (which is also the end of the buffer) because they are the contents of the next websocket frame(s)
-                            let from = len;
-                            let to = buf.len();
-                            let remaining_len = to - from;
+                        // copy the remaining bytes to the end of the rx_buf (which is also the end of the buffer) because they are the contents of the next websocket frame(s)
+                        let from = len;
+                        let to = buf.len();
+                        let remaining_len = to - from;
 
-                            if remaining_len > 0 {
-                                let rx_start = rx_buf.len() - remaining_len;
-                                rx_buf[rx_start..].copy_from_slice(&buf[from..to]);
-                                self.rx_remainder_len = remaining_len;
-                            }
-
-                            return Ok(sub_protocol);
+                        if remaining_len > 0 {
+                            let rx_start = rx_buf.len() - remaining_len;
+                            rx_buf[rx_start..].copy_from_slice(&buf[from..to]);
+                            self.rx_remainder_len = remaining_len;
                         }
-                        Err(crate::Error::HttpHeaderIncomplete) => {
-                            // TODO: continue reading HTTP header in loop
-                            panic!("oh no");
-                        }
-                        Err(e) => {
-                            return Err(FramerError::WebSocket(e));
-                        }
+
+                        Ok(sub_protocol)
                     }
+                    Err(crate::Error::HttpHeaderIncomplete) => {
+                        // TODO: continue reading HTTP header in loop
+                        panic!("http header not complete");
+                    }
+                    Err(e) => Err(FramerError::WebSocket(e)),
                 }
-                None => return Err(FramerError::Disconnected),
             }
+            None => Err(FramerError::Disconnected),
         }
     }
 }

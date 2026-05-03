@@ -431,10 +431,10 @@ where
     /// There should be no way for a user provided input to return the errors listed below as the
     /// input is already constrained.
     /// * The http response is built with a stack allocated 1KB buffer and it *should be impossible*
-    /// for it to return an  `Unknown` error if that buffer is too small. However, this is better
-    /// than a panic and it will do so if the response header is too large to fit in the buffer
+    ///   for it to return an  `Unknown` error if that buffer is too small. However, this is better
+    ///   than a panic and it will do so if the response header is too large to fit in the buffer
     /// * This function can return an `Utf8Error` if there was an error with the generation of the
-    /// accept string. This should also be impossible but an error is preferable to a panic
+    ///   accept string. This should also be impossible but an error is preferable to a panic
     /// * Returns `WebsocketAlreadyOpen` if called on a websocket that is already open
     pub fn server_accept(
         &mut self,
@@ -491,11 +491,11 @@ where
     /// ```
     ///
     /// # Errors
-    /// * The http response is built with a stack allocated 1KB buffer and will return an
-    /// `Unknown` error if that buffer is too small. This would happen is the user supplied too many
-    /// additional headers or the sub-protocol string is too large
+    /// * The http response is built with a stack allocated 1KB buffer and will return an `Unknown` error
+    ///   if that buffer is too small. This would happen is the user supplied too many
+    ///   additional headers or the sub-protocol string is too large
     /// * This function can return an `Utf8Error` if there was an error with the generation of the
-    /// accept string. This should be impossible but an error is preferable to a panic
+    ///   accept string. This should be impossible but an error is preferable to a panic
     /// * Returns `WebsocketAlreadyOpen` if called on a websocket that is already open
     pub fn client_connect(
         &mut self,
@@ -569,7 +569,7 @@ where
     /// below the `read_result.end_of_message` flag would be `false`:
     /// * The payload is fragmented into multiple websocket frames (as per the websocket spec)
     /// * The `from` buffer does not hold the entire websocket frame. For example if only part of
-    /// the frame was read or if the `from` buffer is too small to hold an entire websocket frame
+    ///   the frame was read or if the `from` buffer is too small to hold an entire websocket frame
     /// * The `to` buffer is too small to hold the entire websocket frame payload
     ///
     /// If the function returns `read_result.end_of_message` `false` then the next
@@ -597,9 +597,9 @@ where
     /// * Returns `WebSocketNotOpen` when the websocket is not open when this function is called
     /// * Returns `InvalidOpCode` if the websocket frame contains an invalid opcode
     /// * Returns `UnexpectedContinuationFrame` if we receive a continuation frame without first
-    /// receiving a non-continuation frame with an opcode describing the payload
+    ///   receiving a non-continuation frame with an opcode describing the payload
     /// * Returns `ReadFrameIncomplete` if the `from` buffer does not contain a full websocket
-    /// header (typically 2-14 bytes depending on the payload)
+    ///   header (typically 2-14 bytes depending on the payload)
     /// * Returns `InvalidFrameLength` if the frame length cannot be decoded
     ///
     pub fn read(&mut self, from: &[u8], to: &mut [u8]) -> Result<WebSocketReadResult> {
@@ -638,10 +638,10 @@ where
     /// Writes the payload in `from` to a websocket frame in `to`
     /// * message_type - The type of message to send: Text, Binary or CloseReply
     /// * end_of_message - False to fragment a frame into multiple smaller frames. The last frame
-    /// should set this to true
+    ///   should set this to true
     /// * from - The buffer containing the payload to encode
     /// * to - The the buffer to save the websocket encoded payload to.
-    /// Returns the number of bytes written to the `to` buffer
+    ///   Returns the number of bytes written to the `to` buffer
     /// # Examples
     ///
     /// ```
@@ -659,8 +659,8 @@ where
     /// # Errors
     /// * Returns `WebSocketNotOpen` when the websocket is not open when this function is called
     /// * Returns `WriteToBufferTooSmall` when the `to` buffer is too small to fit the websocket
-    /// frame header (2-14 bytes) plus the payload. Consider fragmenting the messages by making
-    /// multiple write calls with `end_of_message` set to `false` and the final call set to `true`
+    ///   frame header (2-14 bytes) plus the payload. Consider fragmenting the messages by making
+    ///   multiple write calls with `end_of_message` set to `false` and the final call set to `true`
     pub fn write(
         &mut self,
         message_type: WebSocketSendMessageType,
@@ -689,7 +689,7 @@ where
     /// # Errors
     /// * Returns `WebSocketNotOpen` when the websocket is not open when this function is called
     /// * Returns `WriteToBufferTooSmall` when the `to` buffer is too small to fit the websocket
-    /// frame header (2-14 bytes) plus the payload. Consider sending a smaller status_description
+    ///   frame header (2-14 bytes) plus the payload. Consider sending a smaller status_description
     pub fn close(
         &mut self,
         close_status: WebSocketCloseStatusCode,
@@ -709,7 +709,7 @@ where
                     254
                 };
 
-                from_buffer.extend_from_slice(status_description[..len].as_bytes())?;
+                from_buffer.extend_from_slice(&status_description.as_bytes()[..len])?;
                 self.write_frame(&from_buffer, to, WebSocketOpCode::ConnectionClose, true)
             } else {
                 let mut from_buffer: [u8; 2] = [0; 2];
