@@ -32,6 +32,9 @@ mod framer_core;
 #[cfg(feature = "embedded-io")]
 #[cfg_attr(docsrs, doc(cfg(feature = "embedded-io")))]
 pub mod framer_embedded_io;
+#[cfg(feature = "embedded-io-async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "embedded-io-async")))]
+pub mod framer_embedded_io_async;
 const MASK_KEY_LEN: usize = 4;
 const MAX_CONTROL_FRAME_PAYLOAD_LEN: usize = 125;
 

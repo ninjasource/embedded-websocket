@@ -20,11 +20,18 @@ error[E0463]: can't find crate for `std`
 
 ## embedded-io support
 
-Network stacks for embedded systems usually implement the [embedded-io](https://crates.io/crates/embedded-io) traits. The optional `embedded-io` feature adds the `framer_embedded_io` module which works with these blocking streams directly. It has the same API as the `framer` module.
+Network stacks for embedded systems usually implement the [embedded-io](https://crates.io/crates/embedded-io) or [embedded-io-async](https://crates.io/crates/embedded-io-async) traits. Two optional features let the framer use these streams directly:
+
+* `embedded-io`: the `framer_embedded_io` module works with blocking streams.
+* `embedded-io-async`: the `framer_embedded_io_async` module works with async streams, for example the `TcpSocket` of [embassy-net](https://crates.io/crates/embassy-net).
+
+Both have the same API as the `framer` module.
 
 ```
-embedded-websocket = { version = "x.x.x", default-features = false, features = ["embedded-io"] }
+embedded-websocket = { version = "x.x.x", default-features = false, features = ["embedded-io-async"] }
 ```
+
+See [client_embedded_io_async](./examples/client_embedded_io_async.rs) and [server_embedded_io_async](./examples/server_embedded_io_async.rs) for examples.
 
 ## Running the examples
 
@@ -35,9 +42,17 @@ To run the demo web server:
 ```
 cargo run --example server
 ```
+or the same server using the `embedded-io-async` framer:
+```
+cargo run --example server_embedded_io_async --features embedded-io-async
+```
 To run the demo websocket client:
 ```
 cargo run --example client
+```
+or the same client using the `embedded-io-async` framer:
+```
+cargo run --example client_embedded_io_async --features embedded-io-async
 ```
 or use this url in your browser `http://127.0.0.1:1337/`
 

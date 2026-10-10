@@ -23,6 +23,7 @@ rand_core = { version = "0.6.4", default-features = false }
 base64 = { version = "0.13.1", default-features = false }
 futures = { version = "0.3.31", default-features = false }
 embedded-io = { version = "0.7.1", default-features = false, optional = true }
+embedded-io-async = { version = "0.7.0", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -33,10 +34,20 @@ tokio = { version = "1.42.0", features = [
     "io-util",
 ] }
 tokio-util = { version = "0.7.13", features = ["net", "codec"] }
+embedded-io-adapters = { version = "0.7.0", features = ["tokio-1"] }
 
 # see readme for no_std support
 [features]
 default = ["std"]
 # default = []
-std = ["httparse/std", "embedded-io?/std"]
+std = ["httparse/std", "embedded-io?/std", "embedded-io-async?/std"]
 embedded-io = ["dep:embedded-io"]
+embedded-io-async = ["dep:embedded-io-async"]
+
+[[example]]
+name = "client_embedded_io_async"
+required-features = ["embedded-io-async"]
+
+[[example]]
+name = "server_embedded_io_async"
+required-features = ["embedded-io-async"]
