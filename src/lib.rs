@@ -27,7 +27,9 @@ pub use self::random::EmptyRng;
 // start here!!
 pub mod framer;
 pub mod framer_async;
+mod framer_core;
 const MASK_KEY_LEN: usize = 4;
+const MAX_CONTROL_FRAME_PAYLOAD_LEN: usize = 125;
 
 /// Result returning a websocket specific error if encountered
 pub type Result<T> = result::Result<T, Error>;
@@ -721,6 +723,36 @@ where
         }
     }
 
+    fn next_control_frame_len(&self, from_buffer: &[u8]) -> Result<Option<FrameLen>> {
+        if self.continuation_read.is_some() {
+            return Ok(None);
+        }
+
+        if from_buffer.len() < 2 {
+            return Err(Error::ReadFrameIncomplete);
+        }
+
+        match get_op_code(from_buffer[0] & 0x0F)? {
+            WebSocketOpCode::ConnectionClose | WebSocketOpCode::Ping | WebSocketOpCode::Pong => {
+                let (payload_len, len_bytes) = read_length(from_buffer[1], &from_buffer[2..])?;
+                // RFC 6455 section 5.5, also keeps the sum below from overflowing
+                if payload_len > MAX_CONTROL_FRAME_PAYLOAD_LEN {
+                    return Err(Error::InvalidFrameLength);
+                }
+                let mask_len = if from_buffer[1] & 0x80 == 0x80 {
+                    MASK_KEY_LEN
+                } else {
+                    0
+                };
+                Ok(Some(FrameLen {
+                    payload: payload_len,
+                    total: 2 + len_bytes + mask_len + payload_len,
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn read_frame(&mut self, from_buffer: &[u8], to_buffer: &mut [u8]) -> Result<WebSocketFrame> {
         match &mut self.continuation_read {
             Some(continuation_read) => {
@@ -844,6 +876,11 @@ struct ContinuationRead {
     count: usize,
     is_fin_bit_set: bool,
     mask_key: Option<[u8; 4]>,
+}
+
+struct FrameLen {
+    payload: usize,
+    total: usize,
 }
 
 struct WebSocketFrame {
@@ -1081,6 +1118,17 @@ fn build_client_disconnected_frame(num_bytes_from: usize) -> WebSocketFrame {
 mod tests {
     extern crate std;
     use super::*;
+
+    #[test]
+    fn oversized_control_frame_is_rejected() {
+        let ws_client = WebSocketClient::new_client(rand::thread_rng());
+        // ping with a 64 bit payload length of u64::MAX
+        let frame = [0x89, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+        assert!(matches!(
+            ws_client.next_control_frame_len(&frame),
+            Err(Error::InvalidFrameLength)
+        ));
+    }
 
     #[test]
     fn read_fragmented_message_one_byte_at_a_time() {

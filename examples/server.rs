@@ -129,25 +129,20 @@ fn read_header(
         let mut request = httparse::Request::new(&mut headers);
 
         let received_size = stream.read(&mut read_buf[*read_cursor..])?;
+        let total_size = *read_cursor + received_size;
 
-        match request
-            .parse(&read_buf[..*read_cursor + received_size])
-            .unwrap()
-        {
+        match request.parse(&read_buf[..total_size]).unwrap() {
             httparse::Status::Complete(len) => {
-                // if we read exactly the right amount of bytes for the HTTP header then read_cursor would be 0
-                *read_cursor += received_size - len;
                 let headers = request.headers.iter().map(|f| (f.name, f.value));
-                match ws::read_http_header(headers)? {
-                    Some(websocket_context) => match request.path {
-                        Some("/chat") => {
-                            return Ok(Some(websocket_context));
-                        }
-                        _ => return_404_not_found(stream, request.path)?,
-                    },
-                    None => {
-                        handle_non_websocket_http_request(stream, request.path)?;
+                match (ws::read_http_header(headers)?, request.path) {
+                    (Some(websocket_context), Some("/chat")) => {
+                        // the framer expects bytes received after the HTTP header at the start of read_buf
+                        read_buf.copy_within(len..total_size, 0);
+                        *read_cursor = total_size - len;
+                        return Ok(Some(websocket_context));
                     }
+                    (Some(_), path) => return_404_not_found(stream, path)?,
+                    (None, path) => handle_non_websocket_http_request(stream, path)?,
                 }
                 return Ok(None);
             }
