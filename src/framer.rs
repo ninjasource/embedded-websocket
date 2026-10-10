@@ -6,11 +6,11 @@
 //       you have to implement the Read and Write traits specified below
 
 use crate::{
+    framer_core::{Decoded, FramerCore},
     WebSocket, WebSocketCloseStatusCode, WebSocketContext, WebSocketOptions,
-    WebSocketReceiveMessageType, WebSocketSendMessageType, WebSocketState, WebSocketSubProtocol,
-    WebSocketType,
+    WebSocketSendMessageType, WebSocketState, WebSocketSubProtocol, WebSocketType,
 };
-use core::{cmp::min, str::Utf8Error};
+use core::str::Utf8Error;
 use rand_core::RngCore;
 
 // automagically implement the Stream trait for TcpStream if we are using the standard library
@@ -52,12 +52,7 @@ where
     TRng: RngCore,
     TWebSocketType: WebSocketType,
 {
-    read_buf: &'a mut [u8],
-    write_buf: &'a mut [u8],
-    read_cursor: &'a mut usize,
-    frame_cursor: usize,
-    read_len: usize,
-    websocket: &'a mut WebSocket<TRng, TWebSocketType>,
+    core: FramerCore<'a, TRng, TWebSocketType>,
 }
 
 impl<'a, TRng> Framer<'a, TRng, crate::Client>
@@ -69,41 +64,7 @@ where
         stream: &mut impl Stream<E>,
         websocket_options: &WebSocketOptions,
     ) -> Result<Option<WebSocketSubProtocol>, FramerError<E>> {
-        let (len, web_socket_key) = self
-            .websocket
-            .client_connect(websocket_options, self.write_buf)
-            .map_err(FramerError::WebSocket)?;
-        stream
-            .write_all(&self.write_buf[..len])
-            .map_err(FramerError::Io)?;
-        *self.read_cursor = 0;
-
-        loop {
-            // read the response from the server and check it to complete the opening handshake
-            let received_size = stream
-                .read(&mut self.read_buf[*self.read_cursor..])
-                .map_err(FramerError::Io)?;
-
-            match self.websocket.client_accept(
-                &web_socket_key,
-                &self.read_buf[..*self.read_cursor + received_size],
-            ) {
-                Ok((len, sub_protocol)) => {
-                    // "consume" the HTTP header that we have read from the stream
-                    // read_cursor would be 0 if we exactly read the HTTP header from the stream and nothing else
-                    *self.read_cursor += received_size - len;
-                    return Ok(sub_protocol);
-                }
-                Err(crate::Error::HttpHeaderIncomplete) => {
-                    *self.read_cursor += received_size;
-                    // continue reading HTTP header in loop
-                }
-                Err(e) => {
-                    *self.read_cursor += received_size;
-                    return Err(FramerError::WebSocket(e));
-                }
-            }
-        }
+        connect(&mut self.core, stream, websocket_options)
     }
 }
 
@@ -116,13 +77,9 @@ where
         stream: &mut impl Stream<E>,
         websocket_context: &WebSocketContext,
     ) -> Result<(), FramerError<E>> {
-        let len = self
-            .websocket
-            .server_accept(&websocket_context.sec_websocket_key, None, self.write_buf)
-            .map_err(FramerError::WebSocket)?;
-
+        let len = self.core.encode_accept(websocket_context)?;
         stream
-            .write_all(&self.write_buf[..len])
+            .write_all(self.core.written(len))
             .map_err(FramerError::Io)?;
         Ok(())
     }
@@ -142,17 +99,12 @@ where
         websocket: &'a mut WebSocket<TRng, TWebSocketType>,
     ) -> Self {
         Self {
-            read_buf,
-            write_buf,
-            read_cursor,
-            frame_cursor: 0,
-            read_len: 0,
-            websocket,
+            core: FramerCore::new(read_buf, read_cursor, write_buf, websocket),
         }
     }
 
     pub fn state(&self) -> WebSocketState {
-        self.websocket.state
+        self.core.state()
     }
 
     // calling close on a websocket that has already been closed by the other party has no effect
@@ -162,12 +114,9 @@ where
         close_status: WebSocketCloseStatusCode,
         status_description: Option<&str>,
     ) -> Result<(), FramerError<E>> {
-        let len = self
-            .websocket
-            .close(close_status, status_description, self.write_buf)
-            .map_err(FramerError::WebSocket)?;
+        let len = self.core.encode_close(close_status, status_description)?;
         stream
-            .write_all(&self.write_buf[..len])
+            .write_all(self.core.written(len))
             .map_err(FramerError::Io)?;
         Ok(())
     }
@@ -180,11 +129,10 @@ where
         frame_buf: &[u8],
     ) -> Result<(), FramerError<E>> {
         let len = self
-            .websocket
-            .write(message_type, end_of_message, frame_buf, self.write_buf)
-            .map_err(FramerError::WebSocket)?;
+            .core
+            .encode_write(message_type, end_of_message, frame_buf)?;
         stream
-            .write_all(&self.write_buf[..len])
+            .write_all(self.core.written(len))
             .map_err(FramerError::Io)?;
         Ok(())
     }
@@ -197,98 +145,63 @@ where
         stream: &mut impl Stream<E>,
         frame_buf: &'b mut [u8],
     ) -> Result<ReadResult<'b>, FramerError<E>> {
-        loop {
-            if *self.read_cursor == 0 || *self.read_cursor == self.read_len {
-                self.read_len = stream.read(self.read_buf).map_err(FramerError::Io)?;
-                *self.read_cursor = 0;
-            }
+        read(&mut self.core, stream, frame_buf)
+    }
+}
 
-            if self.read_len == 0 {
-                return Ok(ReadResult::Closed);
-            }
+pub(crate) fn connect<TRng: RngCore, E>(
+    core: &mut FramerCore<'_, TRng, crate::Client>,
+    stream: &mut impl Stream<E>,
+    websocket_options: &WebSocketOptions,
+) -> Result<Option<WebSocketSubProtocol>, FramerError<E>> {
+    let (len, web_socket_key) = core.encode_connect(websocket_options)?;
+    stream
+        .write_all(core.written(len))
+        .map_err(FramerError::Io)?;
 
-            loop {
-                if *self.read_cursor == self.read_len {
-                    break;
-                }
+    loop {
+        // read the response from the server and check it to complete the opening handshake
+        let received_size = stream
+            .read(core.connect_read_space()?)
+            .map_err(FramerError::Io)?;
+        if received_size == 0 {
+            return Err(FramerError::WebSocket(crate::Error::HttpHeaderIncomplete));
+        }
+        core.commit_read(received_size);
 
-                if self.frame_cursor == frame_buf.len() {
-                    return Err(FramerError::FrameTooLarge(frame_buf.len()));
-                }
-
-                let ws_result = self
-                    .websocket
-                    .read(
-                        &self.read_buf[*self.read_cursor..self.read_len],
-                        &mut frame_buf[self.frame_cursor..],
-                    )
-                    .map_err(FramerError::WebSocket)?;
-
-                *self.read_cursor += ws_result.len_from;
-
-                match ws_result.message_type {
-                    WebSocketReceiveMessageType::Binary => {
-                        self.frame_cursor += ws_result.len_to;
-                        if ws_result.end_of_message {
-                            let frame = &frame_buf[..self.frame_cursor];
-                            self.frame_cursor = 0;
-                            return Ok(ReadResult::Binary(frame));
-                        }
-                    }
-                    WebSocketReceiveMessageType::Text => {
-                        self.frame_cursor += ws_result.len_to;
-                        if ws_result.end_of_message {
-                            let frame = &frame_buf[..self.frame_cursor];
-                            self.frame_cursor = 0;
-                            let text = core::str::from_utf8(frame).map_err(FramerError::Utf8)?;
-                            return Ok(ReadResult::Text(text));
-                        }
-                    }
-                    WebSocketReceiveMessageType::CloseMustReply => {
-                        self.send_back(
-                            stream,
-                            frame_buf,
-                            ws_result.len_to,
-                            WebSocketSendMessageType::CloseReply,
-                        )?;
-                        return Ok(ReadResult::Closed);
-                    }
-                    WebSocketReceiveMessageType::CloseCompleted => return Ok(ReadResult::Closed),
-                    WebSocketReceiveMessageType::Ping => {
-                        self.send_back(
-                            stream,
-                            frame_buf,
-                            ws_result.len_to,
-                            WebSocketSendMessageType::Pong,
-                        )?;
-                    }
-                    WebSocketReceiveMessageType::Pong => {
-                        let bytes =
-                            &frame_buf[self.frame_cursor..self.frame_cursor + ws_result.len_to];
-                        return Ok(ReadResult::Pong(bytes));
-                    }
-                }
-            }
+        if let Some(sub_protocol) = core.decode_connect_response(&web_socket_key)? {
+            return Ok(sub_protocol);
         }
     }
+}
 
-    fn send_back<E>(
-        &mut self,
-        stream: &mut impl Stream<E>,
-        frame_buf: &'_ mut [u8],
-        len_to: usize,
-        send_message_type: WebSocketSendMessageType,
-    ) -> Result<(), FramerError<E>> {
-        let payload_len = min(self.write_buf.len(), len_to);
-        let from = &frame_buf[self.frame_cursor..self.frame_cursor + payload_len];
-        let len = self
-            .websocket
-            .write(send_message_type, true, from, self.write_buf)
-            .map_err(FramerError::WebSocket)?;
-        stream
-            .write_all(&self.write_buf[..len])
-            .map_err(FramerError::Io)?;
-        Ok(())
+pub(crate) fn read<'b, TRng: RngCore, TWebSocketType: WebSocketType, E>(
+    core: &mut FramerCore<'_, TRng, TWebSocketType>,
+    stream: &mut impl Stream<E>,
+    frame_buf: &'b mut [u8],
+) -> Result<ReadResult<'b>, FramerError<E>> {
+    loop {
+        match core.decode(frame_buf)? {
+            Decoded::NeedMoreData => {
+                let len = stream.read(core.read_space()?).map_err(FramerError::Io)?;
+                if len == 0 {
+                    return Ok(ReadResult::Closed);
+                }
+                core.commit_read(len);
+            }
+            Decoded::SendThenContinue(len) => {
+                stream
+                    .write_all(core.written(len))
+                    .map_err(FramerError::Io)?;
+            }
+            Decoded::SendThenClosed(len) => {
+                stream
+                    .write_all(core.written(len))
+                    .map_err(FramerError::Io)?;
+                return Ok(ReadResult::Closed);
+            }
+            Decoded::Message(message) => return message.into_read_result(frame_buf),
+        }
     }
 }
 
@@ -307,6 +220,7 @@ mod tests {
         pub read_buf: Vec<u8>, // starts off populated
         pub read_cursor: usize,
         pub write_buf: Vec<u8>, // starts off empty
+        pub max_read_len: usize,
     }
 
     impl DummyStream {
@@ -315,13 +229,24 @@ mod tests {
                 read_buf,
                 read_cursor: 0,
                 write_buf: Vec::new(),
+                max_read_len: usize::MAX,
+            }
+        }
+
+        pub fn one_byte_per_read(read_buf: Vec<u8>) -> Self {
+            Self {
+                max_read_len: 1,
+                ..Self::new(read_buf)
             }
         }
     }
 
     impl<E> Stream<E> for DummyStream {
         fn read(&mut self, buf: &mut [u8]) -> Result<usize, E> {
-            let len = buf.len().min(self.read_buf.len() - self.read_cursor);
+            let len = buf
+                .len()
+                .min(self.read_buf.len() - self.read_cursor)
+                .min(self.max_read_len);
             buf[..len].copy_from_slice(&self.read_buf[self.read_cursor..self.read_cursor + len]);
             self.read_cursor += len;
             Ok(len)
@@ -387,6 +312,138 @@ mod tests {
             }
             _ => panic!("expected text frame"),
         };
+    }
+
+    #[test]
+    fn fragmented_frames_with_control_frames_one_byte_per_read() {
+        let mut read_buf = vec![0; 1024];
+        let mut write_buf = vec![0; 1024];
+        let mut read_cursor = 0;
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut client_framer = Framer::new(
+            &mut read_buf,
+            &mut read_cursor,
+            &mut write_buf,
+            &mut ws_client,
+        );
+
+        let mut frame_buf = vec![0; 1024];
+        let mut stream = DummyStream::one_byte_per_read(get_fragmented_frames_with_ping());
+        let frame = client_framer
+            .read::<()>(&mut stream, &mut frame_buf)
+            .unwrap();
+        match frame {
+            ReadResult::Text(x) => {
+                assert_eq!(x, "hello world!")
+            }
+            _ => panic!("expected text frame"),
+        };
+        // unmasked pong with an empty payload
+        assert_eq!(&stream.write_buf[..2], &[0x8A, 0x80]);
+    }
+
+    #[test]
+    fn multiple_messages_in_one_read() {
+        let mut read_buf = vec![0; 1024];
+        let mut write_buf = vec![0; 1024];
+        let mut read_cursor = 0;
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut client_framer = Framer::new(
+            &mut read_buf,
+            &mut read_cursor,
+            &mut write_buf,
+            &mut ws_client,
+        );
+
+        let mut frames = get_fragmented_frames();
+        frames.extend(get_fragmented_frames_with_ping());
+        let mut stream = DummyStream::new(frames);
+        let mut frame_buf = vec![0; 1024];
+        for _ in 0..2 {
+            match client_framer
+                .read::<()>(&mut stream, &mut frame_buf)
+                .unwrap()
+            {
+                ReadResult::Text(x) => assert_eq!(x, "hello world!"),
+                _ => panic!("expected text frame"),
+            }
+        }
+    }
+
+    #[test]
+    fn frames_received_with_handshake_response() {
+        use rand::{rngs::StdRng, SeedableRng};
+
+        let websocket_options = WebSocketOptions {
+            path: "/chat",
+            host: "localhost",
+            origin: "http://localhost",
+            sub_protocols: None,
+            additional_headers: None,
+        };
+        let mut scratch = vec![0; 1024];
+        let (_, web_socket_key) = WebSocketClient::new_client(StdRng::seed_from_u64(1))
+            .client_connect(&websocket_options, &mut scratch)
+            .unwrap();
+        let mut ws_server = WebSocketServer::new_server();
+        let len = ws_server
+            .server_accept(&web_socket_key, None, &mut scratch)
+            .unwrap();
+        let mut received = scratch[..len].to_vec();
+        received.extend(get_fragmented_frames());
+
+        let mut read_buf = vec![0; 1024];
+        let mut write_buf = vec![0; 1024];
+        let mut read_cursor = 0;
+        let mut ws_client = WebSocketClient::new_client(StdRng::seed_from_u64(1));
+        let mut client_framer = Framer::new(
+            &mut read_buf,
+            &mut read_cursor,
+            &mut write_buf,
+            &mut ws_client,
+        );
+        let mut stream = DummyStream::new(received);
+        client_framer
+            .connect::<()>(&mut stream, &websocket_options)
+            .unwrap();
+
+        let mut frame_buf = vec![0; 1024];
+        match client_framer
+            .read::<()>(&mut stream, &mut frame_buf)
+            .unwrap()
+        {
+            ReadResult::Text(x) => assert_eq!(x, "hello world!"),
+            _ => panic!("expected text frame"),
+        }
+    }
+
+    #[test]
+    fn connect_fails_when_stream_ends_during_handshake() {
+        let mut read_buf = vec![0; 1024];
+        let mut write_buf = vec![0; 1024];
+        let mut read_cursor = 0;
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        let mut client_framer = Framer::new(
+            &mut read_buf,
+            &mut read_cursor,
+            &mut write_buf,
+            &mut ws_client,
+        );
+        let websocket_options = WebSocketOptions {
+            path: "/chat",
+            host: "localhost",
+            origin: "http://localhost",
+            sub_protocols: None,
+            additional_headers: None,
+        };
+        let mut stream = DummyStream::new(b"HTTP/1.1 101 Switching".to_vec());
+        let result = client_framer.connect::<()>(&mut stream, &websocket_options);
+        assert!(matches!(
+            result,
+            Err(FramerError::WebSocket(crate::Error::HttpHeaderIncomplete))
+        ));
     }
 
     fn get_fragmented_frames() -> Vec<u8> {

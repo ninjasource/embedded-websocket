@@ -11,6 +11,7 @@
 
 // support for websockets without using the standard library
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};
@@ -27,7 +28,15 @@ pub use self::random::EmptyRng;
 // start here!!
 pub mod framer;
 pub mod framer_async;
+mod framer_core;
+#[cfg(feature = "embedded-io")]
+#[cfg_attr(docsrs, doc(cfg(feature = "embedded-io")))]
+pub mod framer_embedded_io;
+#[cfg(feature = "embedded-io-async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "embedded-io-async")))]
+pub mod framer_embedded_io_async;
 const MASK_KEY_LEN: usize = 4;
+const MAX_CONTROL_FRAME_PAYLOAD_LEN: usize = 125;
 
 /// Result returning a websocket specific error if encountered
 pub type Result<T> = result::Result<T, Error>;
@@ -721,12 +730,49 @@ where
         }
     }
 
+    fn next_control_frame_len(&self, from_buffer: &[u8]) -> Result<Option<FrameLen>> {
+        if self.continuation_read.is_some() {
+            return Ok(None);
+        }
+
+        if from_buffer.len() < 2 {
+            return Err(Error::ReadFrameIncomplete);
+        }
+
+        match get_op_code(from_buffer[0] & 0x0F)? {
+            WebSocketOpCode::ConnectionClose | WebSocketOpCode::Ping | WebSocketOpCode::Pong => {
+                let (payload_len, len_bytes) = read_length(from_buffer[1], &from_buffer[2..])?;
+                // RFC 6455 section 5.5, also keeps the sum below from overflowing
+                if payload_len > MAX_CONTROL_FRAME_PAYLOAD_LEN {
+                    return Err(Error::InvalidFrameLength);
+                }
+                let mask_len = if from_buffer[1] & 0x80 == 0x80 {
+                    MASK_KEY_LEN
+                } else {
+                    0
+                };
+                Ok(Some(FrameLen {
+                    payload: payload_len,
+                    total: 2 + len_bytes + mask_len + payload_len,
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn read_frame(&mut self, from_buffer: &[u8], to_buffer: &mut [u8]) -> Result<WebSocketFrame> {
         match &mut self.continuation_read {
             Some(continuation_read) => {
-                let result = read_continuation(continuation_read, from_buffer, to_buffer);
-                if result.is_fin_bit_set {
+                let mut result = read_continuation(continuation_read, from_buffer, to_buffer);
+                if result.op_code == WebSocketOpCode::ContinuationFrame {
+                    if let Some(continuation_frame_op_code) = self.continuation_frame_op_code {
+                        result.op_code = continuation_frame_op_code;
+                    }
+                }
+                if continuation_read.count == 0 {
                     self.continuation_read = None;
+                }
+                if result.is_fin_bit_set {
                     self.continuation_frame_op_code = None;
                 }
                 Ok(result)
@@ -837,6 +883,11 @@ struct ContinuationRead {
     count: usize,
     is_fin_bit_set: bool,
     mask_key: Option<[u8; 4]>,
+}
+
+struct FrameLen {
+    payload: usize,
+    total: usize,
 }
 
 struct WebSocketFrame {
@@ -1074,6 +1125,54 @@ fn build_client_disconnected_frame(num_bytes_from: usize) -> WebSocketFrame {
 mod tests {
     extern crate std;
     use super::*;
+
+    #[test]
+    fn oversized_control_frame_is_rejected() {
+        let ws_client = WebSocketClient::new_client(rand::thread_rng());
+        // ping with a 64 bit payload length of u64::MAX
+        let frame = [0x89, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+        assert!(matches!(
+            ws_client.next_control_frame_len(&frame),
+            Err(Error::InvalidFrameLength)
+        ));
+    }
+
+    #[test]
+    fn read_fragmented_message_one_byte_at_a_time() {
+        let mut ws_server = WebSocketServer::new_server();
+        let mut frames = std::vec::Vec::new();
+        let mut scratch = [0u8; 64];
+        for (payload, op_code, fin) in [
+            ("hello", WebSocketOpCode::TextFrame, false),
+            (" world", WebSocketOpCode::ContinuationFrame, true),
+        ] {
+            let len = ws_server
+                .write_frame(payload.as_bytes(), &mut scratch, op_code, fin)
+                .unwrap();
+            frames.extend_from_slice(&scratch[..len]);
+        }
+
+        let mut ws_client = WebSocketClient::new_client(rand::thread_rng());
+        ws_client.state = WebSocketState::Open;
+        let mut message = [0u8; 64];
+        let mut message_len = 0;
+        let mut from_start = 0;
+        for from_end in 1..=frames.len() {
+            match ws_client.read(&frames[from_start..from_end], &mut message[message_len..]) {
+                Ok(ws_result) => {
+                    assert_eq!(ws_result.message_type, WebSocketReceiveMessageType::Text);
+                    from_start += ws_result.len_from;
+                    message_len += ws_result.len_to;
+                    assert_eq!(ws_result.end_of_message, from_end == frames.len());
+                }
+                Err(Error::ReadFrameIncomplete) => {}
+                Err(e) => panic!("unexpected error {e:?}"),
+            }
+        }
+
+        assert_eq!(from_start, frames.len());
+        assert_eq!(&message[..message_len], b"hello world");
+    }
 
     #[test]
     fn opening_handshake() {
