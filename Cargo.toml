@@ -10,6 +10,10 @@ keywords = ["websockets", "websocket", "embedded", "no_std"]
 categories = ["embedded", "no-std", "network-programming"]
 readme = "README.md"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 sha1 = { version = "0.10.6", default-features = false }
 heapless = { version = "0.7.16", default-features = false }
@@ -18,6 +22,7 @@ httparse = { version = "1.9.5", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 base64 = { version = "0.13.1", default-features = false }
 futures = { version = "0.3.31", default-features = false }
+embedded-io = { version = "0.7.1", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -33,4 +38,5 @@ tokio-util = { version = "0.7.13", features = ["net", "codec"] }
 [features]
 default = ["std"]
 # default = []
-std = ["httparse/std"]
+std = ["httparse/std", "embedded-io?/std"]
+embedded-io = ["dep:embedded-io"]

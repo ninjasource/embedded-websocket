@@ -11,6 +11,7 @@
 
 // support for websockets without using the standard library
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use byteorder::{BigEndian, ByteOrder};
 use core::{cmp, result, str};
@@ -28,6 +29,9 @@ pub use self::random::EmptyRng;
 pub mod framer;
 pub mod framer_async;
 mod framer_core;
+#[cfg(feature = "embedded-io")]
+#[cfg_attr(docsrs, doc(cfg(feature = "embedded-io")))]
+pub mod framer_embedded_io;
 const MASK_KEY_LEN: usize = 4;
 const MAX_CONTROL_FRAME_PAYLOAD_LEN: usize = 125;
 

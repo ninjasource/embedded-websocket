@@ -9,13 +9,21 @@ You can use this library without linking the rust standard library. In your Carg
 ```
 embedded-websocket = { version = "x.x.x", default-features = false }
 ```
-The optional (but recommended) [framer](./src/lib.rs) module allows you to ergonomically work with full websocket frames without having to deal with the complexities of fragmented data. If you use it you will have to implement the Read and Write traits in that module because they are not available in `no_std`. 
+The optional (but recommended) [framer](./src/lib.rs) module allows you to ergonomically work with full websocket frames without having to deal with the complexities of fragmented data. If you use it you will have to implement the Read and Write traits in that module because they are not available in `no_std`, or use one of the `embedded-io` features below.
 
 NOTE: If you get an error message like the following it means that you have not used `default-features = false` when declaring the dependency in your Cargo.toml file:
 ```
 error[E0463]: can't find crate for `std`
   |
   = note: the `thumbv7m-none-eabi` target may not be installed
+```
+
+## embedded-io support
+
+Network stacks for embedded systems usually implement the [embedded-io](https://crates.io/crates/embedded-io) traits. The optional `embedded-io` feature adds the `framer_embedded_io` module which works with these blocking streams directly. It has the same API as the `framer` module.
+
+```
+embedded-websocket = { version = "x.x.x", default-features = false, features = ["embedded-io"] }
 ```
 
 ## Running the examples
